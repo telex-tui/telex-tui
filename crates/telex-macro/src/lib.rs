@@ -311,6 +311,457 @@ pub fn effect_once(input: TokenStream) -> TokenStream {
     TokenStream::from(expanded)
 }
 
+/// Global counter for generating unique async/stream/terminal type names.
+static HOOK_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// Input for the async_data! macro: `cx, || { ... }`
+struct AsyncDataInput {
+    scope: Expr,
+    func: Expr,
+}
+
+impl Parse for AsyncDataInput {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let scope: Expr = input.parse()?;
+        input.parse::<Token![,]>()?;
+        let func: Expr = input.parse()?;
+        Ok(AsyncDataInput { scope, func })
+    }
+}
+
+impl AsyncDataInput {
+    fn to_tokens(&self) -> TokenStream2 {
+        let scope = &self.scope;
+        let func = &self.func;
+        let counter = HOOK_COUNTER.fetch_add(1, Ordering::SeqCst);
+        let key_type = format_ident!("__Async_{}", counter);
+
+        quote! {
+            {
+                struct #key_type;
+                #scope.use_async_keyed::<#key_type, _, _>(#func)
+            }
+        }
+    }
+}
+
+/// The async_data! macro for creating order-independent async data loading.
+///
+/// # Examples
+///
+/// ```ignore
+/// let data = async_data!(cx, || {
+///     Ok(fetch_data())
+/// });
+/// ```
+#[proc_macro]
+pub fn async_data(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as AsyncDataInput);
+    let expanded = input.to_tokens();
+    TokenStream::from(expanded)
+}
+
+/// Input for the stream! macro: `cx, || { ... }`
+struct StreamInput {
+    scope: Expr,
+    func: Expr,
+}
+
+impl Parse for StreamInput {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let scope: Expr = input.parse()?;
+        input.parse::<Token![,]>()?;
+        let func: Expr = input.parse()?;
+        Ok(StreamInput { scope, func })
+    }
+}
+
+impl StreamInput {
+    fn to_tokens(&self) -> TokenStream2 {
+        let scope = &self.scope;
+        let func = &self.func;
+        let counter = HOOK_COUNTER.fetch_add(1, Ordering::SeqCst);
+        let key_type = format_ident!("__Stream_{}", counter);
+
+        quote! {
+            {
+                struct #key_type;
+                #scope.use_stream_keyed::<#key_type, _, _, _>(#func)
+            }
+        }
+    }
+}
+
+/// The stream! macro for creating order-independent streams.
+///
+/// # Examples
+///
+/// ```ignore
+/// let elapsed = stream!(cx, || {
+///     (0..).inspect(|_| std::thread::sleep(Duration::from_secs(1)))
+/// });
+/// ```
+#[proc_macro]
+pub fn stream(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as StreamInput);
+    let expanded = input.to_tokens();
+    TokenStream::from(expanded)
+}
+
+/// Input for the text_stream! macro: `cx, || { ... }`
+struct TextStreamInput {
+    scope: Expr,
+    func: Expr,
+}
+
+impl Parse for TextStreamInput {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let scope: Expr = input.parse()?;
+        input.parse::<Token![,]>()?;
+        let func: Expr = input.parse()?;
+        Ok(TextStreamInput { scope, func })
+    }
+}
+
+impl TextStreamInput {
+    fn to_tokens(&self) -> TokenStream2 {
+        let scope = &self.scope;
+        let func = &self.func;
+        let counter = HOOK_COUNTER.fetch_add(1, Ordering::SeqCst);
+        let key_type = format_ident!("__TextStream_{}", counter);
+
+        quote! {
+            {
+                struct #key_type;
+                #scope.use_text_stream_keyed::<#key_type, _, _>(#func)
+            }
+        }
+    }
+}
+
+/// The text_stream! macro for creating order-independent text streams.
+///
+/// # Examples
+///
+/// ```ignore
+/// let logs = text_stream!(cx, || {
+///     generate_log_entries()
+/// });
+/// ```
+#[proc_macro]
+pub fn text_stream(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as TextStreamInput);
+    let expanded = input.to_tokens();
+    TokenStream::from(expanded)
+}
+
+/// Input for the text_stream_with_restart! macro: `cx, restart, || { ... }`
+struct TextStreamWithRestartInput {
+    scope: Expr,
+    restart: Expr,
+    func: Expr,
+}
+
+impl Parse for TextStreamWithRestartInput {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let scope: Expr = input.parse()?;
+        input.parse::<Token![,]>()?;
+        let restart: Expr = input.parse()?;
+        input.parse::<Token![,]>()?;
+        let func: Expr = input.parse()?;
+        Ok(TextStreamWithRestartInput { scope, restart, func })
+    }
+}
+
+impl TextStreamWithRestartInput {
+    fn to_tokens(&self) -> TokenStream2 {
+        let scope = &self.scope;
+        let restart = &self.restart;
+        let func = &self.func;
+        let counter = HOOK_COUNTER.fetch_add(1, Ordering::SeqCst);
+        let key_type = format_ident!("__TextStreamRestart_{}", counter);
+
+        quote! {
+            {
+                struct #key_type;
+                #scope.use_text_stream_with_restart_keyed::<#key_type, _, _>(#restart, #func)
+            }
+        }
+    }
+}
+
+/// The text_stream_with_restart! macro for creating restartable text streams.
+///
+/// # Examples
+///
+/// ```ignore
+/// let stream = text_stream_with_restart!(cx, needs_restart, move || {
+///     stream_response()
+/// });
+/// ```
+#[proc_macro]
+pub fn text_stream_with_restart(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as TextStreamWithRestartInput);
+    let expanded = input.to_tokens();
+    TokenStream::from(expanded)
+}
+
+/// Input for the terminal! macro: `cx`
+struct TerminalInput {
+    scope: Expr,
+}
+
+impl Parse for TerminalInput {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let scope: Expr = input.parse()?;
+        Ok(TerminalInput { scope })
+    }
+}
+
+impl TerminalInput {
+    fn to_tokens(&self) -> TokenStream2 {
+        let scope = &self.scope;
+        let counter = HOOK_COUNTER.fetch_add(1, Ordering::SeqCst);
+        let key_type = format_ident!("__Terminal_{}", counter);
+
+        quote! {
+            {
+                struct #key_type;
+                #scope.use_terminal_keyed::<#key_type>()
+            }
+        }
+    }
+}
+
+/// The terminal! macro for creating order-independent terminal handles.
+///
+/// # Examples
+///
+/// ```ignore
+/// let terminal = terminal!(cx);
+/// ```
+#[proc_macro]
+pub fn terminal(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as TerminalInput);
+    let expanded = input.to_tokens();
+    TokenStream::from(expanded)
+}
+
+/// Input for the reducer! macro: `cx, initial, |state, action| { ... }`
+struct ReducerInput {
+    scope: Expr,
+    initial: Expr,
+    reducer_fn: Expr,
+}
+
+impl Parse for ReducerInput {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let scope: Expr = input.parse()?;
+        input.parse::<Token![,]>()?;
+        let initial: Expr = input.parse()?;
+        input.parse::<Token![,]>()?;
+        let reducer_fn: Expr = input.parse()?;
+        Ok(ReducerInput { scope, initial, reducer_fn })
+    }
+}
+
+impl ReducerInput {
+    fn to_tokens(&self) -> TokenStream2 {
+        let scope = &self.scope;
+        let initial = &self.initial;
+        let reducer_fn = &self.reducer_fn;
+        let counter = HOOK_COUNTER.fetch_add(1, Ordering::SeqCst);
+        let key_type = format_ident!("__Reducer_{}", counter);
+
+        quote! {
+            {
+                struct #key_type;
+                #scope.use_reducer_keyed::<#key_type, _, _>(#initial, #reducer_fn)
+            }
+        }
+    }
+}
+
+/// The reducer! macro for creating order-independent state with dispatch.
+///
+/// Returns `(state, dispatch)` where `dispatch` sends actions through
+/// a reducer function to produce new state.
+///
+/// # Examples
+///
+/// ```ignore
+/// let (state, dispatch) = reducer!(cx, AppState::Idle, |state, action| {
+///     match (state, action) {
+///         (_, Action::Reset) => AppState::Idle,
+///         (s, _) => s,
+///     }
+/// });
+///
+/// // Dispatch an action
+/// dispatch(Action::Reset);
+/// ```
+#[proc_macro]
+pub fn reducer(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as ReducerInput);
+    let expanded = input.to_tokens();
+    TokenStream::from(expanded)
+}
+
+/// Input for the channel! macro: `cx, Type`
+struct ChannelInput {
+    scope: Expr,
+    ty: syn::Type,
+}
+
+impl Parse for ChannelInput {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let scope: Expr = input.parse()?;
+        input.parse::<Token![,]>()?;
+        let ty: syn::Type = input.parse()?;
+        Ok(ChannelInput { scope, ty })
+    }
+}
+
+impl ChannelInput {
+    fn to_tokens(&self) -> TokenStream2 {
+        let scope = &self.scope;
+        let ty = &self.ty;
+        let counter = HOOK_COUNTER.fetch_add(1, Ordering::SeqCst);
+        let key_type = format_ident!("__Channel_{}", counter);
+
+        quote! {
+            {
+                struct #key_type;
+                #scope.use_channel_keyed::<#key_type, #ty>()
+            }
+        }
+    }
+}
+
+/// The channel! macro for creating typed inbound channels.
+///
+/// # Examples
+///
+/// ```ignore
+/// let ch = channel!(cx, String);
+/// let tx = ch.tx();
+/// // Send tx to an external thread via effect_once!
+/// for msg in ch.get() { /* ... */ }
+/// ```
+#[proc_macro]
+pub fn channel(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as ChannelInput);
+    let expanded = input.to_tokens();
+    TokenStream::from(expanded)
+}
+
+/// Input for the port! macro: `cx, InType, OutType`
+struct PortInput {
+    scope: Expr,
+    in_ty: syn::Type,
+    out_ty: syn::Type,
+}
+
+impl Parse for PortInput {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let scope: Expr = input.parse()?;
+        input.parse::<Token![,]>()?;
+        let in_ty: syn::Type = input.parse()?;
+        input.parse::<Token![,]>()?;
+        let out_ty: syn::Type = input.parse()?;
+        Ok(PortInput { scope, in_ty, out_ty })
+    }
+}
+
+impl PortInput {
+    fn to_tokens(&self) -> TokenStream2 {
+        let scope = &self.scope;
+        let in_ty = &self.in_ty;
+        let out_ty = &self.out_ty;
+        let counter = HOOK_COUNTER.fetch_add(1, Ordering::SeqCst);
+        let key_type = format_ident!("__Port_{}", counter);
+
+        quote! {
+            {
+                struct #key_type;
+                #scope.use_port_keyed::<#key_type, #in_ty, #out_ty>()
+            }
+        }
+    }
+}
+
+/// The port! macro for creating bidirectional ports.
+///
+/// # Examples
+///
+/// ```ignore
+/// let midi = port!(cx, MidiIn, MidiOut);
+/// let inbound_tx = midi.rx.tx();   // external sends MidiIn here
+/// let outbound_tx = midi.tx();     // component sends MidiOut here
+/// for msg in midi.rx.get() { /* ... */ }
+/// ```
+#[proc_macro]
+pub fn port(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as PortInput);
+    let expanded = input.to_tokens();
+    TokenStream::from(expanded)
+}
+
+/// Input for the interval! macro: `cx, duration, || { ... }`
+struct IntervalInput {
+    scope: Expr,
+    duration: Expr,
+    callback: Expr,
+}
+
+impl Parse for IntervalInput {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let scope: Expr = input.parse()?;
+        input.parse::<Token![,]>()?;
+        let duration: Expr = input.parse()?;
+        input.parse::<Token![,]>()?;
+        let callback: Expr = input.parse()?;
+        Ok(IntervalInput { scope, duration, callback })
+    }
+}
+
+impl IntervalInput {
+    fn to_tokens(&self) -> TokenStream2 {
+        let scope = &self.scope;
+        let duration = &self.duration;
+        let callback = &self.callback;
+        let counter = HOOK_COUNTER.fetch_add(1, Ordering::SeqCst);
+        let key_type = format_ident!("__Interval_{}", counter);
+
+        quote! {
+            {
+                struct #key_type;
+                #scope.use_interval_keyed::<#key_type>(#duration, #callback)
+            }
+        }
+    }
+}
+
+/// The interval! macro for creating periodic timers.
+///
+/// The callback runs on the main thread each frame that the timer fires.
+///
+/// # Examples
+///
+/// ```ignore
+/// let count = state!(cx, || 0u64);
+/// let c = count.clone();
+/// interval!(cx, Duration::from_secs(1), move || {
+///     c.update(|n| *n += 1);
+/// });
+/// ```
+#[proc_macro]
+pub fn interval(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as IntervalInput);
+    let expanded = input.to_tokens();
+    TokenStream::from(expanded)
+}
+
 /// The with! macro for cloning state handles into closures.
 ///
 /// State<T> is a handle (like a smart pointer), not the data itself.

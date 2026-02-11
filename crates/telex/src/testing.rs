@@ -10,7 +10,7 @@
 //! #[test]
 //! fn counter_increments() {
 //!     let mut app = TestApp::new(|cx| {
-//!         let count = cx.use_state(|| 0);
+//!         let count = state!(cx, || 0);
 //!         let c = count.clone();
 //!         View::vstack()
 //!             .child(View::text(format!("Count: {}", count.get())))
@@ -290,6 +290,9 @@ impl<C: Component> TestApp<C> {
             View::Checkbox(CheckboxNode { label, .. }) => {
                 texts.push(label.clone());
             }
+            View::ErrorBoundary(node) => {
+                Self::collect_text(&node.child, texts);
+            }
             _ => {}
         }
     }
@@ -314,6 +317,9 @@ impl<C: Component> TestApp<C> {
                 if let Some(child) = &node.child {
                     Self::collect_buttons(child, buttons);
                 }
+            }
+            View::ErrorBoundary(node) => {
+                Self::collect_buttons(&node.child, buttons);
             }
             _ => {}
         }
@@ -362,6 +368,9 @@ impl<C: Component> TestApp<C> {
                     }
                 }
                 None
+            }
+            View::ErrorBoundary(node) => {
+                Self::find_button_index_recursive(&node.child, label, index)
             }
             View::List(_) | View::TextInput(_) | View::Checkbox(_) => {
                 *index += 1;

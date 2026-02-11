@@ -3,7 +3,7 @@
 use telex::prelude::*;
 
 fn app(cx: Scope) -> View {
-    let terminal = cx.use_terminal();
+    let terminal = terminal!(cx);
 
     // Spawn bash on first render
     if !terminal.is_started() {

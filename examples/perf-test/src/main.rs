@@ -10,18 +10,18 @@ fn main() {
     telex::run_with_theme(
         |cx: Scope| {
             // Item count (powers of 10: 100, 1000, 10000, 100000)
-            let item_power = cx.use_state(|| 3u32); // 10^3 = 1000
+            let item_power = state!(cx, || 3u32); // 10^3 = 1000
             let item_count = 10u32.pow(item_power.get()) as usize;
 
             // Selected item in list
-            let selected = cx.use_state(|| 0usize);
+            let selected = state!(cx, || 0usize);
 
             // Frame timing
-            let frame_times = cx.use_state(Vec::<Duration>::new);
-            let last_frame = cx.use_state(Instant::now);
+            let frame_times = state!(cx, Vec::<Duration>::new);
+            let last_frame = state!(cx, Instant::now);
 
             // Stress mode - auto-scroll
-            let stress_mode = cx.use_state(|| false);
+            let stress_mode = state!(cx, || false);
 
             // Record frame time
             let now = Instant::now();

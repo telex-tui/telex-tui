@@ -13,7 +13,7 @@ use crossterm::event::KeyCode;
 use std::time::Duration;
 use telex::prelude::*;
 
-telex::require_api!(0, 1);
+telex::require_api!(0, 2);
 
 fn main() {
     telex::run_with_theme(App, telex::theme::Theme::nord()).unwrap();
@@ -31,8 +31,8 @@ impl Component for App {
             with!(show_help => move || show_help.update(|v| *v = !*v)),
         );
 
-        // Animated progress value using use_stream
-        let progress = cx.use_stream(|| {
+        // Animated progress value using stream
+        let progress = stream!(cx, || {
             (0u64..).map(|i| {
                 if i > 0 {
                     std::thread::sleep(Duration::from_millis(50));
@@ -104,7 +104,7 @@ impl Component for App {
                         View::vstack()
                             .child(View::styled_text("What you're seeing").bold().build())
                             .child(View::text("• Progress bars with various styles"))
-                            .child(View::text("• Animated progress using use_stream"))
+                            .child(View::text("• Animated progress using stream!() macro"))
                             .child(View::text("• Custom fill and empty characters"))
                             .child(View::gap(1))
                             .child(View::styled_text("Key concepts").bold().build())

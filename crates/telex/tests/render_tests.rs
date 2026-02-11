@@ -212,7 +212,7 @@ fn test_checkbox_renders_checked() {
 #[test]
 fn test_checkbox_toggle() {
     let mut app = TestApp::new(|cx: Scope| {
-        let checked = cx.use_state(|| false);
+        let checked = state!(cx, || false);
         let chk = checked.clone();
 
         View::vstack()
@@ -424,7 +424,7 @@ fn test_tabs_renders_active_content() {
 #[test]
 fn test_tabs_switching() {
     let mut app = TestApp::new(|cx: Scope| {
-        let active = cx.use_state(|| 0usize);
+        let active = state!(cx, || 0usize);
         let act = active.clone();
 
         View::vstack()
@@ -690,7 +690,7 @@ fn test_button_renders_label() {
 #[test]
 fn test_button_activation() {
     let mut app = TestApp::new(|cx: Scope| {
-        let count = cx.use_state(|| 0);
+        let count = state!(cx, || 0);
         let c = count.clone();
 
         View::vstack()

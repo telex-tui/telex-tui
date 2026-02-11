@@ -179,10 +179,9 @@ impl Terminal {
         Ok(())
     }
 
-    /// Poll for an input event with a small timeout.
-    pub fn poll_event(&self) -> io::Result<Option<Event>> {
-        // Short timeout for responsive streaming (16ms ≈ 60fps)
-        if poll(std::time::Duration::from_millis(16))? {
+    /// Poll for an input event with the given timeout.
+    pub fn poll_event(&self, timeout: std::time::Duration) -> io::Result<Option<Event>> {
+        if poll(timeout)? {
             Ok(Some(event::read()?))
         } else {
             Ok(None)

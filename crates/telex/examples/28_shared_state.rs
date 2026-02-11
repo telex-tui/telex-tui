@@ -14,7 +14,7 @@ use crossterm::event::KeyCode;
 use telex::prelude::*;
 use telex::Color;
 
-telex::require_api!(0, 1);
+telex::require_api!(0, 2);
 
 // Define a NAMED key type - anywhere this is used, we get the SAME state
 struct SharedCounterKey;

@@ -1,6 +1,6 @@
 //! Example 24: Async Data Loading
 //!
-//! Demonstrates the use_async hook for loading data asynchronously,
+//! Demonstrates the async_data! macro for loading data asynchronously,
 //! showing loading states, success states, and error handling.
 //!
 //! Run with: `cargo run -p telex-tui --example 24_async_data`
@@ -11,7 +11,7 @@ use std::time::Duration;
 use telex::prelude::*;
 use telex::Color;
 
-telex::require_api!(0, 1);
+telex::require_api!(0, 2);
 
 fn main() {
     telex::run_with_theme(App, telex::theme::Theme::nord()).unwrap();
@@ -45,7 +45,7 @@ impl Component for App {
         );
 
         // Simulate fetching user profile (slow - 2 seconds)
-        let profile = cx.use_async(|| {
+        let profile = async_data!(cx, || {
             thread::sleep(Duration::from_secs(2));
             Ok(UserProfile {
                 name: "Alice Johnson".to_string(),
@@ -55,7 +55,7 @@ impl Component for App {
         });
 
         // Simulate fetching user stats (medium - 1 second)
-        let stats = cx.use_async(|| {
+        let stats = async_data!(cx, || {
             thread::sleep(Duration::from_secs(1));
             Ok(Stats {
                 posts: 142,
@@ -65,7 +65,7 @@ impl Component for App {
         });
 
         // Simulate a failing request
-        let failing_data = cx.use_async(|| {
+        let failing_data = async_data!(cx, || {
             thread::sleep(Duration::from_millis(500));
             Err::<String, _>("Network error: Connection refused".to_string())
         });
@@ -159,7 +159,7 @@ impl Component for App {
                             .child(View::text("• Different load times for each"))
                             .child(View::gap(1))
                             .child(View::styled_text("Key concepts").bold().build())
-                            .child(View::text("• cx.use_async() runs in background"))
+                            .child(View::text("• async_data!() macro runs in background"))
                             .child(View::text("• Returns Async<T> enum"))
                             .child(View::text("• .is_loading() / .is_error() helpers"))
                             .child(View::text("• Pattern match for state handling"))

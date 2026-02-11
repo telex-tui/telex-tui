@@ -7,18 +7,18 @@ fn main() {
     telex::run_with_theme(
         |cx: Scope| {
             // Layout mode: 0 = HStack, 1 = VStack
-            let mode = cx.use_state(|| 0usize);
+            let mode = state!(cx, || 0usize);
 
             // Flex values for 3 boxes
-            let flex_a = cx.use_state(|| 1u16);
-            let flex_b = cx.use_state(|| 2u16);
-            let flex_c = cx.use_state(|| 1u16);
+            let flex_a = state!(cx, || 1u16);
+            let flex_b = state!(cx, || 2u16);
+            let flex_c = state!(cx, || 1u16);
 
             // Spacing
-            let spacing = cx.use_state(|| 1u16);
+            let spacing = state!(cx, || 1u16);
 
             // Which control is selected (0=mode, 1=A, 2=B, 3=C, 4=spacing)
-            let selected = cx.use_state(|| 1usize);
+            let selected = state!(cx, || 1usize);
 
             // Key handlers
             let sel = selected.clone();

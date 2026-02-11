@@ -13,7 +13,7 @@ use telex::testing::TestApp;
 #[test]
 fn test_text_input_typing() {
     let mut app = TestApp::new(|cx: Scope| {
-        let text = cx.use_state(String::new);
+        let text = state!(cx, String::new);
         let txt = text.clone();
 
         View::vstack()
@@ -36,7 +36,7 @@ fn test_text_input_typing() {
 #[test]
 fn test_text_input_backspace() {
     let mut app = TestApp::new(|cx: Scope| {
-        let text = cx.use_state(|| "Test".to_string());
+        let text = state!(cx, || "Test".to_string());
         let txt = text.clone();
 
         View::vstack()
@@ -59,7 +59,7 @@ fn test_text_input_backspace() {
 #[test]
 fn test_text_input_empty_backspace() {
     let mut app = TestApp::new(|cx: Scope| {
-        let text = cx.use_state(String::new);
+        let text = state!(cx, String::new);
         let txt = text.clone();
 
         View::vstack()
@@ -86,7 +86,7 @@ fn test_text_input_empty_backspace() {
 #[test]
 fn test_list_navigation_wraps() {
     let mut app = TestApp::new(|cx: Scope| {
-        let selected = cx.use_state(|| 0usize);
+        let selected = state!(cx, || 0usize);
         let sel = selected.clone();
 
         View::vstack()
@@ -118,7 +118,7 @@ fn test_list_navigation_wraps() {
 #[test]
 fn test_list_up_wraps() {
     let mut app = TestApp::new(|cx: Scope| {
-        let selected = cx.use_state(|| 0usize);
+        let selected = state!(cx, || 0usize);
         let sel = selected.clone();
 
         View::vstack()
@@ -143,7 +143,7 @@ fn test_list_up_wraps() {
 #[test]
 fn test_list_empty() {
     let mut app = TestApp::new(|cx: Scope| {
-        let selected = cx.use_state(|| 0usize);
+        let selected = state!(cx, || 0usize);
         let sel = selected.clone();
 
         View::list()
@@ -164,7 +164,7 @@ fn test_list_empty() {
 #[test]
 fn test_tree_navigation_initial() {
     let app = TestApp::new(|cx: Scope| {
-        let selected = cx.use_state(|| vec![0usize]);
+        let selected = state!(cx, || vec![0usize]);
         let sel = selected.clone();
 
         let items = vec![
@@ -210,7 +210,7 @@ fn test_tree_focusable_count() {
 #[test]
 fn test_table_navigation_initial() {
     let app = TestApp::new(|cx: Scope| {
-        let selected = cx.use_state(|| 0usize);
+        let selected = state!(cx, || 0usize);
         let sel = selected.clone();
 
         let rows = vec![
@@ -270,7 +270,7 @@ fn test_tabs_focusable_count() {
 #[test]
 fn test_tabs_initial_state() {
     let app = TestApp::new(|cx: Scope| {
-        let active = cx.use_state(|| 0usize);
+        let active = state!(cx, || 0usize);
 
         View::vstack()
             .child(View::text(format!("Active: {}", active.get())))
@@ -373,7 +373,7 @@ fn test_focus_prev_wraps() {
 #[test]
 fn test_button_activation() {
     let mut app = TestApp::new(|cx: Scope| {
-        let count = cx.use_state(|| 0);
+        let count = state!(cx, || 0);
         let c = count.clone();
 
         View::vstack()
@@ -398,7 +398,7 @@ fn test_button_activation() {
 #[test]
 fn test_button_press_by_label() {
     let mut app = TestApp::new(|cx: Scope| {
-        let clicked = cx.use_state(String::new);
+        let clicked = state!(cx, String::new);
         let c1 = clicked.clone();
         let c2 = clicked.clone();
 
@@ -433,7 +433,7 @@ fn test_button_press_by_label() {
 #[test]
 fn test_checkbox_toggle() {
     let mut app = TestApp::new(|cx: Scope| {
-        let checked = cx.use_state(|| false);
+        let checked = state!(cx, || false);
         let chk = checked.clone();
 
         View::vstack()
@@ -553,8 +553,8 @@ fn test_split_focusables_in_panes() {
 #[test]
 fn test_text_area_typing() {
     let mut app = TestApp::new(|cx: Scope| {
-        let text = cx.use_state(String::new);
-        let len = cx.use_state(|| 0usize);
+        let text = state!(cx, String::new);
+        let len = state!(cx, || 0usize);
         let txt = text.clone();
         let l = len.clone();
 
@@ -583,8 +583,8 @@ fn test_text_area_typing() {
 fn test_text_area_wrap_at_width() {
     // Create a small app (20 columns wide) to test wrapping
     let mut app = TestApp::new(|cx: Scope| {
-        let text = cx.use_state(String::new);
-        let line_count = cx.use_state(|| 1usize);
+        let text = state!(cx, String::new);
+        let line_count = state!(cx, || 1usize);
         let txt = text.clone();
         let lc = line_count.clone();
 
@@ -623,8 +623,8 @@ fn test_text_area_wrap_at_width() {
 #[test]
 fn test_text_area_explicit_wrap_width() {
     let mut app = TestApp::new(|cx: Scope| {
-        let text = cx.use_state(String::new);
-        let line_count = cx.use_state(|| 1usize);
+        let text = state!(cx, String::new);
+        let line_count = state!(cx, || 1usize);
         let txt = text.clone();
         let lc = line_count.clone();
 
@@ -672,8 +672,8 @@ fn test_text_area_explicit_wrap_width() {
 #[test]
 fn test_auto_wrap_content_corruption_bug_fixed() {
     let mut app = TestApp::new(|cx: Scope| {
-        let text = cx.use_state(String::new);
-        let content = cx.use_state(String::new);
+        let text = state!(cx, String::new);
+        let content = state!(cx, String::new);
         let txt = text.clone();
         let cnt = content.clone();
 

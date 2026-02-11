@@ -8,12 +8,12 @@ use telex::Color;
 #[allow(dead_code)]
 fn test_jsx_syntax(cx: Scope) -> View {
     // State for interactive widgets
-    let count = cx.use_state(|| 0);
-    let text_value = cx.use_state(String::new);
-    let textarea_value = cx.use_state(String::new);
-    let selected = cx.use_state(|| 0);
-    let checked = cx.use_state(|| false);
-    let show_modal = cx.use_state(|| false);
+    let count = state!(cx, || 0);
+    let text_value = state!(cx, String::new);
+    let textarea_value = state!(cx, String::new);
+    let selected = state!(cx, || 0);
+    let checked = state!(cx, || false);
+    let show_modal = state!(cx, || false);
 
     // Clones for closures
     let c1 = count.clone();

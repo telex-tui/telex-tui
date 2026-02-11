@@ -9,7 +9,7 @@ use crossterm::style::Color;
 use std::time::Duration;
 use telex::prelude::*;
 
-telex::require_api!(0, 1);
+telex::require_api!(0, 2);
 
 fn main() {
     telex::run_with_theme(App, telex::theme::Theme::nord()).unwrap();
@@ -28,19 +28,19 @@ impl Component for App {
         );
 
         // CPU usage stream (fluctuates between 10-90%)
-        let cpu = cx.use_stream(|| {
+        let cpu = stream!(cx, || {
             let mut rng_state = 42u64;
             (0..).map(move |_| {
                 std::thread::sleep(Duration::from_millis(500));
                 // Simple LCG pseudo-random
                 rng_state = rng_state.wrapping_mul(1103515245).wrapping_add(12345);
-                
+
                 ((rng_state >> 16) % 80) as u8 + 10
             })
         });
 
         // Memory usage stream (slowly increases then drops)
-        let memory = cx.use_stream(|| {
+        let memory = stream!(cx, || {
             (0..).map(|i| {
                 std::thread::sleep(Duration::from_millis(800));
                 let cycle = i % 20;
@@ -53,12 +53,12 @@ impl Component for App {
         });
 
         // Network stream (random-ish traffic)
-        let network = cx.use_stream(|| {
+        let network = stream!(cx, || {
             let mut rng_state = 123u64;
             (0..).map(move |_| {
                 std::thread::sleep(Duration::from_millis(300));
                 rng_state = rng_state.wrapping_mul(1103515245).wrapping_add(12345);
-                
+
                 ((rng_state >> 16) % 1000) as u32 + 100
             })
         });
@@ -157,7 +157,7 @@ impl Component for App {
                             .child(View::text("• ASCII progress bars"))
                             .child(View::gap(1))
                             .child(View::styled_text("Key concepts").bold().build())
-                            .child(View::text("• Each use_stream() runs in its own thread"))
+                            .child(View::text("• Each stream!() runs in its own thread"))
                             .child(View::text(
                                 "• Streams update independently at different rates",
                             ))

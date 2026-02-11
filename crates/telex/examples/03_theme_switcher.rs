@@ -8,7 +8,7 @@ use crossterm::event::KeyCode;
 use telex::prelude::*;
 use telex::theme::{current_theme, set_theme, supports_true_color, terminal_name, Theme};
 
-telex::require_api!(0, 1);
+telex::require_api!(0, 2);
 
 fn main() {
     telex::run(App).unwrap();

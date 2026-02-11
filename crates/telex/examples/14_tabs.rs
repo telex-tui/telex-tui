@@ -9,7 +9,7 @@ use crossterm::style::Color;
 use telex::prelude::*;
 use telex::theme::{set_theme, Theme};
 
-telex::require_api!(0, 1);
+telex::require_api!(0, 2);
 
 fn main() {
     set_theme(Theme::dark());

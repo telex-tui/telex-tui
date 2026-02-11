@@ -19,7 +19,7 @@ use crossterm::event::KeyCode;
 use telex::prelude::*;
 use telex::Color;
 
-telex::require_api!(0, 1);
+telex::require_api!(0, 2);
 
 fn main() {
     telex::run_with_theme(App, telex::theme::Theme::nord()).unwrap();
@@ -37,8 +37,8 @@ impl Component for App {
             with!(show_help => move || show_help.update(|v| *v = !*v)),
         );
 
-        // Animated value for the bar chart using use_stream directly
-        let frame_stream = cx.use_stream(|| {
+        // Animated value for the bar chart using stream macro
+        let frame_stream = stream!(cx, || {
             (0u32..).inspect(|&i| {
                 if i > 0 {
                     std::thread::sleep(std::time::Duration::from_millis(100));

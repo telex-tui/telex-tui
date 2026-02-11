@@ -1,15 +1,17 @@
+use std::panic::AssertUnwindSafe;
+
 use crate::buffer::{Buffer, Rect};
 use crate::canvas::PendingCanvas;
 use crate::image::PendingImage;
 use crate::text;
 use crate::theme::current_theme;
 use crate::view::{
-    BoxNode, ButtonNode, CanvasNode, CheckboxNode, ColumnWidth, CommandPaletteNode, FormFieldNode,
-    FormNode, HStackNode, ImageNode, ListNode, MenuBarNode, MenuItemNode, ModalNode, Orientation,
-    PaletteCommand, ProgressBarNode, RadioGroupNode, SplitNode, StatusBarNode, TabPosition,
-    TableNode, TabsNode, TerminalNode, TextAlign, TextAreaNode, TextInputNode, TextNode,
-    ToastContainerNode, ToastLevelView, ToastPosition, TreeItem, TreeNode, TreePath, VStackNode,
-    View,
+    BoxNode, ButtonNode, CanvasNode, CheckboxNode, ColumnWidth, CommandPaletteNode,
+    ErrorBoundaryNode, FormFieldNode, FormNode, HStackNode, ImageNode, ListNode, MenuBarNode,
+    MenuItemNode, ModalNode, Orientation, PaletteCommand, ProgressBarNode, RadioGroupNode,
+    SliderNode, SplitNode, StatusBarNode, TabPosition, TableNode, TabsNode, TerminalNode,
+    TextAlign, TextAreaNode, TextInputNode, TextNode, ToastContainerNode, ToastLevelView,
+    ToastPosition, TreeItem, TreeNode, TreePath, VStackNode, View,
 };
 
 /// A pending menu dropdown to render after main content.
@@ -199,6 +201,9 @@ pub fn render_view(buffer: &mut Buffer, view: &View, area: Rect, ctx: &mut Rende
         View::Canvas(node) => render_canvas(buffer, node, area, ctx),
         View::Image(node) => render_image(buffer, node, area, ctx),
         View::Terminal(node) => render_terminal(buffer, node, area, ctx),
+        View::ErrorBoundary(node) => render_error_boundary(buffer, node, area, ctx),
+        View::Custom(node) => node.widget.borrow().render(area, buffer),
+        View::Slider(node) => render_slider(buffer, node, area, ctx),
         View::Spacer(_) => {} // Spacer is handled by parent layout
         View::Empty => {}
     }
@@ -329,7 +334,131 @@ fn wrapped_height(view: &View, width: u16) -> u16 {
                 inner + border + padding
             }
         }
+        View::ErrorBoundary(n) => wrapped_height(&n.child, width),
         _ => view.intrinsic_height().unwrap_or(1),
+    }
+}
+
+fn render_error_boundary(
+    buffer: &mut Buffer,
+    node: &ErrorBoundaryNode,
+    area: Rect,
+    ctx: &mut RenderContext,
+) {
+    // Try rendering the child; if it panics, render the fallback instead.
+    let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
+        render_view(buffer, &node.child, area, ctx);
+    }));
+
+    if result.is_err() {
+        // Child panicked — clear the area and render fallback
+        let theme = current_theme();
+        for y in area.y..area.y + area.height {
+            for x in area.x..area.x + area.width {
+                buffer.set(x, y, ' ', theme.foreground, theme.background);
+            }
+        }
+        render_view(buffer, &node.fallback, area, ctx);
+    }
+}
+
+fn render_slider(buffer: &mut Buffer, node: &SliderNode, area: Rect, ctx: &mut RenderContext) {
+    let is_focused = ctx.is_next_focused();
+
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+
+    let theme = current_theme();
+
+    // Format: [label] [====>--------] value
+    let value_str = if node.step >= 1.0 {
+        format!("{}", node.value as i64)
+    } else {
+        format!("{:.1}", node.value)
+    };
+
+    let label_prefix = match &node.label {
+        Some(l) => format!("{} ", l),
+        None => String::new(),
+    };
+
+    // Reserve space: label + value display + brackets + 1 space
+    let reserved = label_prefix.len() + value_str.len() + 3; // "[] " + value
+    let track_width = if (area.width as usize) > reserved + 4 {
+        area.width as usize - reserved
+    } else {
+        4 // Minimum track width
+    };
+
+    // Calculate fill position
+    let range = node.max - node.min;
+    let ratio = if range > 0.0 {
+        ((node.value - node.min) / range).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let filled = (ratio * track_width as f64).round() as usize;
+    let empty = track_width.saturating_sub(filled);
+
+    // Choose colors
+    let (fg, fill_fg) = if is_focused {
+        (theme.foreground, theme.primary)
+    } else {
+        (theme.foreground, theme.secondary)
+    };
+
+    // Write label prefix
+    let mut x = area.x;
+    for ch in label_prefix.chars() {
+        if x >= area.x + area.width {
+            break;
+        }
+        buffer.set(x, area.y, ch, fg, theme.background);
+        x += 1;
+    }
+
+    // Write '['
+    if x < area.x + area.width {
+        buffer.set(x, area.y, '[', fg, theme.background);
+        x += 1;
+    }
+
+    // Write filled portion
+    for _ in 0..filled {
+        if x >= area.x + area.width {
+            break;
+        }
+        buffer.set(x, area.y, '=', fill_fg, theme.background);
+        x += 1;
+    }
+
+    // Write empty portion
+    for _ in 0..empty {
+        if x >= area.x + area.width {
+            break;
+        }
+        buffer.set(x, area.y, '-', fg, theme.background);
+        x += 1;
+    }
+
+    // Write ']'
+    if x < area.x + area.width {
+        buffer.set(x, area.y, ']', fg, theme.background);
+        x += 1;
+    }
+
+    // Write space + value
+    if x < area.x + area.width {
+        buffer.set(x, area.y, ' ', fg, theme.background);
+        x += 1;
+    }
+    for ch in value_str.chars() {
+        if x >= area.x + area.width {
+            break;
+        }
+        buffer.set(x, area.y, ch, fg, theme.background);
+        x += 1;
     }
 }
 

@@ -6,7 +6,7 @@ use telex::testing::TestApp;
 #[test]
 fn test_text_input_cursor_visible() {
     let mut app = TestApp::new(|cx: Scope| {
-        let text = cx.use_state(|| "hello".to_string());
+        let text = state!(cx, || "hello".to_string());
         View::text_input()
             .value(text.get())
             .build()
@@ -27,7 +27,7 @@ fn test_text_input_cursor_visible() {
 #[test]
 fn test_text_input_cursor_not_visible_when_unfocused() {
     let mut app = TestApp::new(|cx: Scope| {
-        let text = cx.use_state(|| "hello".to_string());
+        let text = state!(cx, || "hello".to_string());
         View::vstack()
             .child(View::button().label("btn").build())  // index 0
             .child(View::text_input().value(text.get()).build())  // index 1

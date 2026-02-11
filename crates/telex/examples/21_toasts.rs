@@ -10,7 +10,7 @@ use std::time::Duration;
 use telex::prelude::*;
 use telex::Color;
 
-telex::require_api!(0, 1);
+telex::require_api!(0, 2);
 
 fn main() {
     telex::run_with_theme(App, telex::theme::Theme::nord()).unwrap();

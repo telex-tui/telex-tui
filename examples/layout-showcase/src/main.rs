@@ -23,21 +23,21 @@ fn main() {
             });
 
             // Theme selection state
-            let theme_idx = cx.use_state(|| 2usize); // Start with nord
+            let theme_idx = state!(cx, || 2usize); // Start with nord
             let themes = ["dark", "light", "nord", "monokai"];
 
             // Modal visibility state
-            let show_modal = cx.use_state(|| false);
+            let show_modal = state!(cx, || false);
             let sm = show_modal.clone();
 
             // Text input with cursor tracking
-            let search = cx.use_state(String::new);
-            let search_cursor = cx.use_state(|| 0usize);
+            let search = state!(cx, String::new);
+            let search_cursor = state!(cx, || 0usize);
 
             // Text area content
-            let notes = cx.use_state(String::new);
-            let notes_line = cx.use_state(|| 0usize);
-            let notes_col = cx.use_state(|| 0usize);
+            let notes = state!(cx, String::new);
+            let notes_line = state!(cx, || 0usize);
+            let notes_col = state!(cx, || 0usize);
 
             // Register keyboard commands for theme switching
             let ti = theme_idx.clone();
@@ -77,7 +77,7 @@ fn main() {
             });
 
             // Async data loading
-            let data = cx.use_async(|| {
+            let data = async_data!(cx, || {
                 thread::sleep(Duration::from_secs(2));
                 Ok(vec![
                     "main".to_string(),
@@ -87,12 +87,12 @@ fn main() {
             });
 
             // Counter state
-            let count = cx.use_state(|| 0);
+            let count = state!(cx, || 0);
             let c1 = count.clone();
             let c2 = count.clone();
 
             // List selection
-            let selected = cx.use_state(|| 0);
+            let selected = state!(cx, || 0);
             let sel = selected.clone();
 
             // Read config from context (demonstrating context usage)

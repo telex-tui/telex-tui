@@ -10,7 +10,7 @@ use crossterm::style::Color;
 use std::time::Duration;
 use telex::prelude::*;
 
-telex::require_api!(0, 1);
+telex::require_api!(0, 2);
 
 fn main() {
     telex::run_with_theme(App, telex::theme::Theme::nord()).unwrap();
@@ -29,7 +29,7 @@ impl Component for App {
         );
 
         // Stream that yields elapsed seconds
-        let elapsed = cx.use_stream(|| {
+        let elapsed = stream!(cx, || {
             (0u64..).inspect(|&s| {
                 if s > 0 {
                     std::thread::sleep(Duration::from_secs(1));
@@ -68,7 +68,7 @@ impl Component for App {
                     .child(
                         View::vstack()
                             .child(View::styled_text("What you're seeing").bold().build())
-                            .child(View::text("• cx.use_stream() for background data"))
+                            .child(View::text("• stream!() macro for background data"))
                             .child(View::text("• Auto-updating UI without user input"))
                             .child(View::text("• Green dot = stream is running"))
                             .child(View::gap(1))

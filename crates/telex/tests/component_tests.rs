@@ -6,7 +6,7 @@ use telex::testing::TestApp;
 #[test]
 fn test_counter_increments() {
     let mut app = TestApp::new(|cx: Scope| {
-        let count = cx.use_state(|| 0);
+        let count = state!(cx, || 0);
         let c1 = count.clone();
         let c2 = count.clone();
 
@@ -111,7 +111,7 @@ fn test_focus_navigation() {
 #[test]
 fn test_checkbox_toggle() {
     let mut app = TestApp::new(|cx: Scope| {
-        let checked = cx.use_state(|| false);
+        let checked = state!(cx, || false);
         let chk = checked.clone();
 
         View::vstack()
@@ -146,7 +146,7 @@ fn test_checkbox_toggle() {
 #[test]
 fn test_list_selection() {
     let mut app = TestApp::new(|cx: Scope| {
-        let selected = cx.use_state(|| 0);
+        let selected = state!(cx, || 0);
         let sel = selected.clone();
 
         View::vstack()
@@ -183,7 +183,7 @@ fn test_list_selection() {
 #[test]
 fn test_text_input() {
     let mut app = TestApp::new(|cx: Scope| {
-        let text = cx.use_state(String::new);
+        let text = state!(cx, String::new);
         let txt = text.clone();
 
         View::vstack()

@@ -10,8 +10,8 @@
 use crate::text;
 use crate::view::{
     Callback, ChangeCallback, CommandCallback, CursorChangeCallback, CursorPosCallback, Menu,
-    PaletteCommand, RowActivateCallback, SelectCallback, SortCallback, ToggleCallback,
-    TreeActivateCallback, TreeItem, TreePath, TreeSelectCallback, View,
+    PaletteCommand, RowActivateCallback, SelectCallback, SliderCallback, SortCallback,
+    ToggleCallback, TreeActivateCallback, TreeItem, TreePath, TreeSelectCallback, View,
 };
 
 /// Represents a focusable element in the UI.
@@ -118,6 +118,14 @@ pub enum Focusable {
         handle: crate::terminal_state::TerminalHandle,
         #[allow(dead_code)]
         on_exit: Option<Callback>,
+    },
+    /// A slider for bounded numeric values.
+    Slider {
+        min: f64,
+        max: f64,
+        value: f64,
+        step: f64,
+        on_change: Option<SliderCallback>,
     },
 }
 
@@ -469,6 +477,26 @@ impl FocusManager {
                     on_exit: node.on_exit.clone(),
                 });
             }
+            View::ErrorBoundary(node) => {
+                // Collect focusables from the child view
+                if let Some(idx) = self.collect_recursive(&node.child) {
+                    initial_focus = Some(idx);
+                }
+            }
+            View::Custom(_) => {
+                // Custom widgets are not currently focusable through the
+                // focus system (they'd need their own Focusable variant).
+                // For now, skip. Users can wrap in a Box with scroll for focus.
+            }
+            View::Slider(node) => {
+                self.focusables.push(Focusable::Slider {
+                    min: node.min,
+                    max: node.max,
+                    value: node.value,
+                    step: node.step,
+                    on_change: node.on_change.clone(),
+                });
+            }
             View::Text(_)
             | View::Spacer(_)
             | View::ProgressBar(_)
@@ -619,6 +647,7 @@ impl FocusManager {
             Some(Focusable::MenuBar { .. }) => "MenuBar",
             Some(Focusable::FormField { .. }) => "FormField",
             Some(Focusable::Terminal { .. }) => "Terminal",
+            Some(Focusable::Slider { .. }) => "Slider",
             None => "None",
         }
     }
@@ -1899,6 +1928,49 @@ impl FocusManager {
         for focusable in &self.focusables {
             if let Focusable::Terminal { handle, .. } = focusable {
                 handle.poll();
+            }
+        }
+    }
+
+    // ========== Slider ==========
+
+    pub fn is_focused_slider(&self) -> bool {
+        matches!(
+            self.focusables.get(self.focus_index),
+            Some(Focusable::Slider { .. })
+        )
+    }
+
+    /// Increment the slider value by one step.
+    pub fn slider_increment(&self) {
+        if let Some(Focusable::Slider {
+            min,
+            max,
+            value,
+            step,
+            on_change,
+        }) = self.focusables.get(self.focus_index)
+        {
+            let new_value = (value + step).min(*max).max(*min);
+            if let Some(cb) = on_change {
+                cb(new_value);
+            }
+        }
+    }
+
+    /// Decrement the slider value by one step.
+    pub fn slider_decrement(&self) {
+        if let Some(Focusable::Slider {
+            min,
+            max,
+            value,
+            step,
+            on_change,
+        }) = self.focusables.get(self.focus_index)
+        {
+            let new_value = (value - step).min(*max).max(*min);
+            if let Some(cb) = on_change {
+                cb(new_value);
             }
         }
     }

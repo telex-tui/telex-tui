@@ -9,7 +9,7 @@ use crossterm::style::Color;
 use std::time::Duration;
 use telex::prelude::*;
 
-telex::require_api!(0, 1);
+telex::require_api!(0, 2);
 
 fn main() {
     telex::run_with_theme(App, telex::theme::Theme::nord()).unwrap();
@@ -28,7 +28,7 @@ impl Component for App {
         );
 
         // Stream log entries
-        let logs = cx.use_text_stream(|| {
+        let logs = text_stream!(cx, || {
             let log_messages = vec![
                 "[INFO]  Application started",
                 "[INFO]  Loading configuration...",
@@ -124,12 +124,12 @@ impl Component for App {
                     .child(
                         View::vstack()
                             .child(View::styled_text("What you're seeing").bold().build())
-                            .child(View::text("• cx.use_text_stream() for accumulating text"))
+                            .child(View::text("• text_stream!() macro for accumulating text"))
                             .child(View::text("• Auto-scrolling box that follows new content"))
                             .child(View::text("• Live/End indicator based on stream state"))
                             .child(View::gap(1))
                             .child(View::styled_text("Key concepts").bold().build())
-                            .child(View::text("• use_text_stream concatenates yielded strings"))
+                            .child(View::text("• text_stream! concatenates yielded strings"))
                             .child(View::text(
                                 "• auto_scroll_bottom(true) keeps newest visible",
                             ))

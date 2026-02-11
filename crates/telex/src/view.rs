@@ -1,4 +1,7 @@
+use std::cell::RefCell;
 use std::rc::Rc;
+
+use crate::widget::Widget;
 
 /// Callback type for event handlers (no arguments).
 pub type Callback = Rc<dyn Fn()>;
@@ -85,6 +88,9 @@ pub type CommandCallback = Rc<dyn Fn(&'static str)>;
 /// Callback type for canvas drawing (receives mutable draw context).
 pub type CanvasDrawCallback = Rc<dyn Fn(&mut crate::canvas::DrawContext)>;
 
+/// Callback type for slider value changes.
+pub type SliderCallback = Rc<dyn Fn(f64)>;
+
 /// The core view type - a node in the UI tree.
 #[derive(Clone)]
 pub enum View {
@@ -140,6 +146,12 @@ pub enum View {
     Image(ImageNode),
     /// An interactive PTY terminal emulator.
     Terminal(TerminalNode),
+    /// An error boundary that catches panics in its child view.
+    ErrorBoundary(ErrorBoundaryNode),
+    /// A user-defined custom widget.
+    Custom(CustomNode),
+    /// A slider for bounded numeric values.
+    Slider(SliderNode),
     /// An empty placeholder.
     Empty,
 }
@@ -256,6 +268,15 @@ impl std::fmt::Debug for View {
                 .field("rows", &n.rows)
                 .field("cols", &n.cols)
                 .field("border", &n.border)
+                .finish(),
+            View::ErrorBoundary(_) => f.debug_struct("ErrorBoundary").finish(),
+            View::Custom(_) => f.debug_struct("Custom").finish(),
+            View::Slider(n) => f
+                .debug_struct("Slider")
+                .field("min", &n.min)
+                .field("max", &n.max)
+                .field("value", &n.value)
+                .field("step", &n.step)
                 .finish(),
             View::Empty => write!(f, "Empty"),
         }
@@ -463,6 +484,54 @@ impl View {
         TerminalBuilder::new()
     }
 
+    /// Create a custom widget view.
+    ///
+    /// Wraps a user-defined `Widget` implementation in a View.
+    /// Use this for custom character-cell rendering that can't be
+    /// composed from built-in widgets.
+    ///
+    /// # Example
+    /// ```rust,ignore
+    /// let my_widget = Rc::new(RefCell::new(MyWidget::new()));
+    /// View::custom(my_widget)
+    /// ```
+    pub fn custom(widget: Rc<RefCell<dyn Widget>>) -> Self {
+        View::Custom(CustomNode { widget })
+    }
+
+    /// Create a slider builder for bounded numeric values.
+    ///
+    /// # Example
+    /// ```rust,ignore
+    /// View::slider()
+    ///     .min(0.0)
+    ///     .max(127.0)
+    ///     .value(64.0)
+    ///     .step(1.0)
+    ///     .label("Volume")
+    ///     .on_change(move |v| vol.set(v))
+    ///     .build()
+    /// ```
+    pub fn slider() -> SliderBuilder {
+        SliderBuilder::new()
+    }
+
+    /// Create an error boundary builder.
+    ///
+    /// An error boundary catches panics in its child view and displays
+    /// a fallback view instead of crashing the application.
+    ///
+    /// # Example
+    /// ```rust,ignore
+    /// View::error_boundary()
+    ///     .child(risky_component_view)
+    ///     .fallback(View::text("Something went wrong"))
+    ///     .build()
+    /// ```
+    pub fn error_boundary() -> ErrorBoundaryBuilder {
+        ErrorBoundaryBuilder::new()
+    }
+
     /// Create an empty view.
     pub fn empty() -> Self {
         View::Empty
@@ -486,6 +555,7 @@ impl View {
             View::MenuBar(_) => true,    // Menu bar is focusable for navigation
             View::FormField(_) => true,  // Form fields are focusable for input
             View::Terminal(_) => true,   // Terminal is focusable for PTY input
+            View::Slider(_) => true,    // Slider is focusable for value adjustment
             _ => false,
         }
     }
@@ -616,6 +686,9 @@ impl View {
                 let border = if n.border { 2 } else { 0 };
                 Some(n.rows as u16 + border)
             }
+            View::ErrorBoundary(n) => n.child.intrinsic_height(),
+            View::Custom(n) => n.widget.borrow().height_hint(80), // Use default width hint
+            View::Slider(_) => Some(1), // Slider is a single row
             View::Empty => Some(0),
         }
     }
@@ -749,6 +822,13 @@ impl View {
                 // Terminal width is cols + border
                 let border = if n.border { 2 } else { 0 };
                 Some(n.cols as u16 + border)
+            }
+            View::ErrorBoundary(n) => n.child.intrinsic_width(),
+            View::Custom(n) => n.widget.borrow().width_hint(),
+            View::Slider(n) => {
+                // Label + brackets + track + value display
+                let label_len = n.label.as_ref().map(|l| l.len() + 1).unwrap_or(0) as u16;
+                Some(label_len + 20) // Reasonable default width
             }
             View::Empty => Some(0),
         }
@@ -3189,6 +3269,149 @@ impl TerminalBuilder {
             border: self.border,
             title: self.title,
             on_exit: self.on_exit,
+        })
+    }
+}
+
+// ========== Error Boundary ==========
+
+/// An error boundary that catches panics in its child view.
+///
+/// During rendering, if the child view panics, the fallback view is
+/// displayed instead. This prevents a single misbehaving component
+/// from crashing the entire application.
+#[derive(Clone)]
+pub struct ErrorBoundaryNode {
+    /// The child view to render (may panic).
+    pub child: Box<View>,
+    /// The fallback view shown when the child panics.
+    pub fallback: Box<View>,
+}
+
+/// Builder for error boundary views.
+#[derive(Default)]
+pub struct ErrorBoundaryBuilder {
+    child: Option<View>,
+    fallback: Option<View>,
+}
+
+impl ErrorBoundaryBuilder {
+    pub fn new() -> Self {
+        Self {
+            child: None,
+            fallback: None,
+        }
+    }
+
+    /// Set the child view (the view that might panic).
+    pub fn child(mut self, child: View) -> Self {
+        self.child = Some(child);
+        self
+    }
+
+    /// Set the fallback view (shown when child panics).
+    pub fn fallback(mut self, fallback: View) -> Self {
+        self.fallback = Some(fallback);
+        self
+    }
+
+    pub fn build(self) -> View {
+        View::ErrorBoundary(ErrorBoundaryNode {
+            child: Box::new(self.child.unwrap_or(View::Empty)),
+            fallback: Box::new(
+                self.fallback
+                    .unwrap_or_else(|| View::text("[error boundary: child panicked]")),
+            ),
+        })
+    }
+}
+
+// ========== Custom Widget ==========
+
+/// A node wrapping a user-defined custom widget.
+///
+/// Uses `Rc<RefCell<dyn Widget>>` because:
+/// - `Rc` enables Clone (View derives Clone) without requiring Widget: Clone
+/// - `RefCell` allows interior mutability for focus handling
+#[derive(Clone)]
+pub struct CustomNode {
+    pub widget: Rc<RefCell<dyn Widget>>,
+}
+
+// ========== Slider ==========
+
+/// A slider for bounded numeric values (e.g., MIDI CC, volume, brightness).
+#[derive(Clone)]
+pub struct SliderNode {
+    pub min: f64,
+    pub max: f64,
+    pub value: f64,
+    pub step: f64,
+    pub label: Option<String>,
+    pub on_change: Option<SliderCallback>,
+}
+
+/// Builder for slider views.
+#[derive(Default)]
+pub struct SliderBuilder {
+    min: f64,
+    max: f64,
+    value: f64,
+    step: f64,
+    label: Option<String>,
+    on_change: Option<SliderCallback>,
+}
+
+impl SliderBuilder {
+    pub fn new() -> Self {
+        Self {
+            min: 0.0,
+            max: 100.0,
+            value: 0.0,
+            step: 1.0,
+            label: None,
+            on_change: None,
+        }
+    }
+
+    pub fn min(mut self, min: f64) -> Self {
+        self.min = min;
+        self
+    }
+
+    pub fn max(mut self, max: f64) -> Self {
+        self.max = max;
+        self
+    }
+
+    pub fn value(mut self, value: f64) -> Self {
+        self.value = value;
+        self
+    }
+
+    pub fn step(mut self, step: f64) -> Self {
+        self.step = step;
+        self
+    }
+
+    pub fn label(mut self, label: impl Into<String>) -> Self {
+        self.label = Some(label.into());
+        self
+    }
+
+    pub fn on_change(mut self, callback: impl Fn(f64) + 'static) -> Self {
+        self.on_change = Some(Rc::new(callback));
+        self
+    }
+
+    pub fn build(self) -> View {
+        View::Slider(SliderNode {
+            min: self.min,
+            max: self.max,
+            value: self.value.clamp(self.min, self.max),
+            step: self.step,
+            label: self.label,
+            on_change: self.on_change,
         })
     }
 }

@@ -76,7 +76,7 @@ impl Component for App {
         let current_request = request_id.get();
         let msgs_for_stream = messages.get();
         let current_config = config.get();
-        let stream = cx.use_text_stream_with_restart(needs_restart, move || {
+        let stream = text_stream_with_restart!(cx, needs_restart, move || {
             if current_request > 0 {
                 // Find the last user message to use as prompt
                 if let Some(last_user_msg) =

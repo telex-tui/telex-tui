@@ -1,4 +1,4 @@
-//! Tests for the effect API (both legacy index-based and new keyed macros).
+//! Tests for the keyed effect macros: effect!(), effect_once!(), and state!().
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -42,10 +42,10 @@ impl EffectTracker {
     }
 }
 
-// ========== use_effect tests ==========
+// ========== effect_once! tests (keyed, run once) ==========
 
 #[test]
-fn test_use_effect_runs_every_render() {
+fn test_effect_once_runs_only_on_first_render() {
     let tracker = EffectTracker::new();
     let tracker_clone = tracker.clone();
 
@@ -56,7 +56,7 @@ fn test_use_effect_runs_every_render() {
     impl Component for TestComponent {
         fn render(&self, cx: Scope) -> View {
             let t = self.tracker.clone();
-            cx.use_effect(move || {
+            effect_once!(cx, move || {
                 t.record_effect();
                 || {}
             });
@@ -68,21 +68,21 @@ fn test_use_effect_runs_every_render() {
         tracker: tracker_clone.clone(),
     });
 
-    // First render
+    // First render - effect runs
     app.render_to_string();
     assert_eq!(tracker_clone.effect_calls(), 1);
 
-    // Second render (simulated by rendering again)
+    // Second render - effect does NOT run (keyed, deps never change)
     app.render_to_string();
-    assert_eq!(tracker_clone.effect_calls(), 2);
+    assert_eq!(tracker_clone.effect_calls(), 1);
 
-    // Third render
+    // Third render - still does NOT run
     app.render_to_string();
-    assert_eq!(tracker_clone.effect_calls(), 3);
+    assert_eq!(tracker_clone.effect_calls(), 1);
 }
 
 #[test]
-fn test_use_effect_cleanup_runs_before_next_effect() {
+fn test_effect_with_cleanup_runs_on_dep_change() {
     let tracker = EffectTracker::new();
     let tracker_clone = tracker.clone();
 
@@ -92,15 +92,26 @@ fn test_use_effect_cleanup_runs_before_next_effect() {
 
     impl Component for TestComponent {
         fn render(&self, cx: Scope) -> View {
+            let count = state!(cx, || 0);
             let t = self.tracker.clone();
             let t2 = self.tracker.clone();
-            cx.use_effect(move || {
+
+            effect!(cx, count.get(), move |&_c| {
                 t.record_effect();
                 move || {
                     t2.record_cleanup();
                 }
             });
-            View::text("test")
+
+            View::vstack()
+                .child(View::text(format!("Count: {}", count.get())))
+                .child(
+                    View::button()
+                        .label("+")
+                        .on_press(move || count.update(|n| *n += 1))
+                        .build(),
+                )
+                .build()
         }
     }
 
@@ -113,21 +124,24 @@ fn test_use_effect_cleanup_runs_before_next_effect() {
     assert_eq!(tracker_clone.effect_calls(), 1);
     assert_eq!(tracker_clone.cleanup_calls(), 0);
 
-    // Second render - cleanup runs, then effect
+    // Re-render without state change - no cleanup, no re-run
+    app.render_to_string();
+    assert_eq!(tracker_clone.effect_calls(), 1);
+    assert_eq!(tracker_clone.cleanup_calls(), 0);
+
+    // Press button to change state
+    app.press_button("+");
+
+    // Render with new state - cleanup runs for old, then effect runs
     app.render_to_string();
     assert_eq!(tracker_clone.effect_calls(), 2);
     assert_eq!(tracker_clone.cleanup_calls(), 1);
-
-    // Third render - cleanup runs, then effect
-    app.render_to_string();
-    assert_eq!(tracker_clone.effect_calls(), 3);
-    assert_eq!(tracker_clone.cleanup_calls(), 2);
 }
 
-// ========== use_effect_once tests ==========
+// ========== effect_once! macro tests ==========
 
 #[test]
-fn test_use_effect_once_runs_only_once() {
+fn test_effect_once_macro_from_legacy_runs_only_once() {
     let tracker = EffectTracker::new();
     let tracker_clone = tracker.clone();
 
@@ -138,7 +152,7 @@ fn test_use_effect_once_runs_only_once() {
     impl Component for TestComponent {
         fn render(&self, cx: Scope) -> View {
             let t = self.tracker.clone();
-            cx.use_effect_once(move || {
+            effect_once!(cx, move || {
                 t.record_effect();
                 || {}
             });
@@ -163,10 +177,10 @@ fn test_use_effect_once_runs_only_once() {
     assert_eq!(tracker_clone.effect_calls(), 1);
 }
 
-// ========== use_effect_with tests ==========
+// ========== effect! macro with deps tests ==========
 
 #[test]
-fn test_use_effect_with_runs_on_dep_change() {
+fn test_effect_macro_with_deps_runs_on_dep_change() {
     let tracker = EffectTracker::new();
     let tracker_clone = tracker.clone();
 
@@ -176,10 +190,10 @@ fn test_use_effect_with_runs_on_dep_change() {
 
     impl Component for TestComponent {
         fn render(&self, cx: Scope) -> View {
-            let count = cx.use_state(|| 0);
+            let count = state!(cx, || 0);
             let t = self.tracker.clone();
 
-            cx.use_effect_with(count.get(), move |&c| {
+            effect!(cx, count.get(), move |&c| {
                 t.record_value(c);
                 || {}
             });
@@ -221,7 +235,7 @@ fn test_use_effect_with_runs_on_dep_change() {
 }
 
 #[test]
-fn test_use_effect_with_tuple_deps() {
+fn test_effect_macro_with_tuple_deps() {
     let tracker = EffectTracker::new();
     let tracker_clone = tracker.clone();
 
@@ -231,11 +245,11 @@ fn test_use_effect_with_tuple_deps() {
 
     impl Component for TestComponent {
         fn render(&self, cx: Scope) -> View {
-            let a = cx.use_state(|| 1);
-            let b = cx.use_state(|| 2);
+            let a = state!(cx, || 1);
+            let b = state!(cx, || 2);
             let t = self.tracker.clone();
 
-            cx.use_effect_with((a.get(), b.get()), move |&(a, b)| {
+            effect!(cx, (a.get(), b.get()), move |&(a, b)| {
                 t.record_value(a + b);
                 || {}
             });
@@ -282,17 +296,18 @@ fn test_use_effect_with_tuple_deps() {
 #[should_panic(expected = "Effect Cycle Detected")]
 fn test_effect_cycle_detection_panics() {
     // This test verifies that the cycle detection catches infinite loops.
-    // An effect that updates state on every render will trigger the guard.
+    // An effect that watches state it also updates will trigger the guard.
 
     struct InfiniteLoopComponent;
 
     impl Component for InfiniteLoopComponent {
         fn render(&self, cx: Scope) -> View {
-            let count = cx.use_state(|| 0);
+            let count = state!(cx, || 0);
 
-            // BAD: This effect updates state every render, causing infinite loop
+            // BAD: This effect watches count and also updates count,
+            // causing an infinite cycle: dep changes -> effect runs -> dep changes -> ...
             let c = count.clone();
-            cx.use_effect(move || {
+            effect!(cx, count.get(), move |&_c| {
                 c.update(|n| *n += 1);
                 || {}
             });
@@ -303,17 +318,17 @@ fn test_effect_cycle_detection_panics() {
 
     let mut app = telex::testing::TestApp::new(InfiniteLoopComponent);
 
-    // Render many times to trigger the cycle detection
-    // The threshold is 100 effect runs per 10 frames
+    // Render to trigger the cycle detection
+    // The effect updates its own dep, causing infinite re-renders
     for _ in 0..150 {
         app.render_to_string();
     }
 }
 
-// ========== Multiple effects tests ==========
+// ========== Multiple keyed effects tests ==========
 
 #[test]
-fn test_multiple_effects_run_in_order() {
+fn test_multiple_effect_once_macros_all_run() {
     let tracker = EffectTracker::new();
     let tracker_clone = tracker.clone();
 
@@ -327,17 +342,17 @@ fn test_multiple_effects_run_in_order() {
             let t2 = self.tracker.clone();
             let t3 = self.tracker.clone();
 
-            cx.use_effect(move || {
+            effect_once!(cx, move || {
                 t1.record_value(1);
                 || {}
             });
 
-            cx.use_effect(move || {
+            effect_once!(cx, move || {
                 t2.record_value(2);
                 || {}
             });
 
-            cx.use_effect(move || {
+            effect_once!(cx, move || {
                 t3.record_value(3);
                 || {}
             });

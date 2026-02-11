@@ -541,7 +541,8 @@ impl AnimatedCanvasBuilder {
         let delay_ms = 1000 / self.fps as u64;
 
         // Create a frame counter stream that ticks at the specified FPS
-        let frame_stream = self.cx.use_stream(move || {
+        struct AnimatedCanvasStreamKey;
+        let frame_stream = self.cx.use_stream_keyed::<AnimatedCanvasStreamKey, _, _, _>(move || {
             (0u64..).inspect(move |&i| {
                 if i > 0 {
                     std::thread::sleep(Duration::from_millis(delay_ms));

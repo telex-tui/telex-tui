@@ -11,7 +11,7 @@
 pub const API_VERSION_MAJOR: u32 = 0;
 
 /// Current API minor version.
-pub const API_VERSION_MINOR: u32 = 1;
+pub const API_VERSION_MINOR: u32 = 2;
 
 /// Current API patch version.
 pub const API_VERSION_PATCH: u32 = 0;
@@ -28,7 +28,7 @@ pub const API_VERSION_PATCH: u32 = 0;
 /// ```rust,ignore
 /// use telex::prelude::*;
 ///
-/// telex::require_api!(0, 1);  // Requires API version 0.1.x
+/// telex::require_api!(0, 2);  // Requires API version 0.2.x
 ///
 /// fn main() {
 ///     telex::run(App).unwrap();
@@ -86,6 +86,7 @@ macro_rules! require_api {
 mod async_state;
 mod buffer;
 pub mod canvas;
+pub mod channel;
 mod command;
 pub mod command_system;
 mod component;
@@ -105,27 +106,31 @@ pub mod text;
 pub mod theme;
 pub mod toast;
 mod view;
+pub mod widget;
 
 pub mod prelude;
 
 pub use async_state::Async;
+pub use channel::{ChannelDrain, ChannelHandle, PortHandle, WakingSender};
 pub use command::KeyBinding;
 pub use component::Component;
 pub use scope::Scope;
 pub use state::State;
 pub use stream_state::{StreamHandle, StreamState, TextStreamHandle};
-pub use telex_macro::{effect, effect_once, state, view, with};
+pub use telex_macro::{async_data, channel as channel_macro, effect, effect_once, interval, port, reducer, state, stream, terminal, text_stream, text_stream_with_restart, view, with};
 pub use terminal::Terminal;
 pub use terminal_state::{TerminalBuffer, TerminalHandle};
 pub use view::{
     Align, BoxBuilder, BoxNode, ButtonBuilder, ButtonNode, Callback, CanvasBuilder, CanvasNode,
     ChangeCallback, CheckboxBuilder, CheckboxNode, ColumnWidth, CommandCallback,
-    CommandPaletteBuilder, CommandPaletteNode, FormBuilder, FormFieldBuilder, FormFieldNode,
-    FormNode, FormSubmitCallback, HStackBuilder, HStackNode, ImageBuilder, ImageNode, Justify,
-    LayoutMode, ListBuilder, ListNode, Menu, MenuBarBuilder, MenuBarNode, MenuItemNode,
-    ModalBuilder, ModalNode, Orientation, PaletteCommand, RadioGroupBuilder, RadioGroupNode,
-    SelectCallback, SpacerNode, SplitBuilder, SplitNode, TabPosition, TableBuilder, TableColumn,
-    TableNode, TabsBuilder, TabsNode, TextAlign, TextAreaBuilder, TextAreaNode, TextBuilder,
+    CommandPaletteBuilder, CommandPaletteNode, CustomNode, ErrorBoundaryBuilder,
+    ErrorBoundaryNode, FormBuilder, FormFieldBuilder, FormFieldNode, FormNode,
+    FormSubmitCallback, HStackBuilder, HStackNode, ImageBuilder, ImageNode, Justify, LayoutMode,
+    SliderBuilder, SliderCallback, SliderNode,
+    ListBuilder, ListNode, Menu, MenuBarBuilder, MenuBarNode, MenuItemNode, ModalBuilder,
+    ModalNode, Orientation, PaletteCommand, RadioGroupBuilder, RadioGroupNode, SelectCallback,
+    SpacerNode, SplitBuilder, SplitNode, TabPosition, TableBuilder, TableColumn, TableNode,
+    TabsBuilder, TabsNode, TextAlign, TextAreaBuilder, TextAreaNode, TextBuilder,
     TextInputBuilder, TextInputNode, TextNode, TerminalBuilder, TerminalNode,
     ToastContainerBuilder, ToastContainerNode, ToastItem, ToastLevelView, ToastPosition,
     ToggleCallback, TreeActivateCallback, TreeBuilder, TreeItem, TreeNode, TreePath,
@@ -149,6 +154,8 @@ use scope::StateStorage;
 use std::io::Result;
 use std::panic;
 use std::rc::Rc;
+use std::sync::atomic::Ordering;
+use std::time::Duration;
 use theme::Theme;
 
 /// Check if any modal is visible in the view tree.
@@ -164,6 +171,7 @@ fn has_visible_modal(view: &View) -> bool {
             .unwrap_or(false),
         View::Split(node) => has_visible_modal(&node.first) || has_visible_modal(&node.second),
         View::Tabs(node) => node.children.iter().any(has_visible_modal),
+        View::ErrorBoundary(node) => has_visible_modal(&node.child),
         _ => false,
     }
 }
@@ -183,6 +191,7 @@ fn has_visible_command_palette(view: &View) -> bool {
             has_visible_command_palette(&node.first) || has_visible_command_palette(&node.second)
         }
         View::Tabs(node) => node.children.iter().any(has_visible_command_palette),
+        View::ErrorBoundary(node) => has_visible_command_palette(&node.child),
         _ => false,
     }
 }
@@ -221,6 +230,9 @@ fn call_command_palette_dismiss(view: &View) {
                 call_command_palette_dismiss(child);
             }
         }
+        View::ErrorBoundary(node) => {
+            call_command_palette_dismiss(&node.child);
+        }
         _ => {}
     }
 }
@@ -258,6 +270,9 @@ fn call_modal_dismiss(view: &View) {
             for child in &node.children {
                 call_modal_dismiss(child);
             }
+        }
+        View::ErrorBoundary(node) => {
+            call_modal_dismiss(&node.child);
         }
         _ => {}
     }
@@ -368,6 +383,8 @@ pub fn run<C: Component>(root: C) -> Result<()> {
     let debug_mode = is_debug_mode();
 
     let mut frame_count = 0u64;
+    let mut needs_render = true; // Always render on first frame
+    let wake_flag = storage.wake_flag().clone();
 
     loop {
         let render_start = std::time::Instant::now();
@@ -375,8 +392,42 @@ pub fn run<C: Component>(root: C) -> Result<()> {
         // Decay effect cycle counter (sliding window for infinite loop detection)
         storage.decay_effect_counter();
 
+        // Drain all registered channels (external events -> frame buffers)
+        // Clear first, then drain so components see only this frame's messages.
+        storage.clear_channels();
+        storage.drain_channels();
+
+        // Channel data means we need to render
+        if storage.has_channel_data() {
+            needs_render = true;
+        }
+
         // Poll terminal output (before rendering, so we pick up any new data)
         focus.poll_terminals();
+
+        // Compute poll timeout: 0ms if wake flag is set (external event arrived),
+        // otherwise 16ms (~60fps). Reset the flag before polling.
+        let woken = wake_flag.swap(false, Ordering::Acquire);
+        let poll_timeout = if woken || needs_render {
+            Duration::ZERO
+        } else {
+            Duration::from_millis(16)
+        };
+
+        // Skip render if nothing changed since last frame
+        if !needs_render {
+            // Still need to handle input even when skipping render
+            if let Some(event) = terminal.poll_event(poll_timeout)? {
+                if let Event::Resize(_, _) = event {
+                    needs_render = true;
+                    continue;
+                }
+                // Input arrived — fall through to the full render + input handling below
+            } else {
+                continue; // No input, no channel data, skip frame
+            }
+        }
+        needs_render = false; // Reset for next frame; input/effects/channels will set it again
 
         // Clear command registry before each render
         commands.clear();
@@ -439,8 +490,8 @@ pub fn run<C: Component>(root: C) -> Result<()> {
         // If effects ran and potentially modified state, re-render once
         if storage.flush_effects() {
             // Effects ran - re-render to show any state changes they made
-            // Only do this once per frame to prevent infinite loops from use_effect
-            storage.reset_index();
+            // Only do this once per frame to prevent infinite loops
+            needs_render = true;
             let cx = Scope::with_all(
                 Rc::clone(&storage),
                 Rc::clone(&commands),
@@ -473,7 +524,10 @@ pub fn run<C: Component>(root: C) -> Result<()> {
         let viewport_height = terminal.height().saturating_sub(6); // Approximate visible rows
 
         // Handle input
-        if let Some(event) = terminal.poll_event()? {
+        if let Some(event) = terminal.poll_event(Duration::from_millis(16))? {
+            // Any input means we should re-render next frame
+            needs_render = true;
+
             // Handle resize - just continue to trigger redraw
             if let Event::Resize(_, _) = event {
                 continue;
@@ -714,6 +768,8 @@ pub fn run<C: Component>(root: C) -> Result<()> {
                             }
                         } else if focus.is_focused_tabs() {
                             focus.tabs_select_prev();
+                        } else if focus.is_focused_slider() {
+                            focus.slider_decrement();
                         } else if focus.is_focused_tree() {
                             // Left triggers activate (app should collapse)
                             focus.tree_activate();
@@ -732,6 +788,8 @@ pub fn run<C: Component>(root: C) -> Result<()> {
                             }
                         } else if focus.is_focused_tabs() {
                             focus.tabs_select_next();
+                        } else if focus.is_focused_slider() {
+                            focus.slider_increment();
                         } else if focus.is_focused_tree() {
                             // Right triggers activate (app should expand)
                             focus.tree_activate();

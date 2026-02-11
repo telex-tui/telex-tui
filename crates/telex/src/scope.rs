@@ -2,8 +2,11 @@ use std::any::{Any, TypeId};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
 use crate::async_state::{Async, AsyncHandle};
+use crate::channel::{ChannelDrain, ChannelHandle, IntervalHandle, PortHandle};
 use crate::command::{CommandRegistry, KeyBinding};
 use crate::context::ContextStorage;
 use crate::state::State;
@@ -25,16 +28,6 @@ struct EffectState {
     initialized: bool,
 }
 
-/// A pending effect to run after render (index-based).
-struct PendingEffect {
-    /// Index in the effects vec.
-    index: usize,
-    /// The effect function that returns an optional cleanup.
-    effect_fn: EffectFn,
-    /// New dependencies to store after running.
-    new_deps: Option<Box<dyn Any>>,
-}
-
 /// A pending keyed effect to run after render.
 struct PendingKeyedEffect {
     /// TypeId key for the effect.
@@ -53,54 +46,49 @@ const MAX_EFFECT_RUNS_PER_WINDOW: usize = 100;
 const EFFECT_WINDOW_FRAMES: usize = 10;
 
 /// Storage for component state across re-renders.
-#[derive(Default)]
 pub struct StateStorage {
-    /// Index-based state storage (legacy, for backwards compatibility)
-    states: RefCell<Vec<Rc<dyn Any>>>,
-    index: RefCell<usize>,
     /// TypeId-keyed state storage (order-independent)
     keyed_states: RefCell<HashMap<TypeId, Rc<dyn Any>>>,
-    /// Index-based effect storage (legacy)
-    effects: RefCell<Vec<EffectState>>,
-    effect_index: RefCell<usize>,
     /// TypeId-keyed effect storage (order-independent)
     keyed_effects: RefCell<HashMap<TypeId, EffectState>>,
-    /// Index-based effects scheduled to run after render
-    pending_effects: RefCell<Vec<PendingEffect>>,
     /// Keyed effects scheduled to run after render
     pending_keyed_effects: RefCell<Vec<PendingKeyedEffect>>,
     /// Rolling count of effect executions for cycle detection
     effect_run_count: RefCell<usize>,
     /// Frames since last counter decay
     frames_since_decay: RefCell<usize>,
+    /// Registered channels for the run loop to drain each frame
+    channels: RefCell<Vec<Rc<dyn ChannelDrain>>>,
+    /// Wake flag shared with channel senders for low-latency polling
+    wake_flag: Arc<AtomicBool>,
+}
+
+impl Default for StateStorage {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl StateStorage {
     pub fn new() -> Self {
         Self {
-            states: RefCell::new(Vec::new()),
-            index: RefCell::new(0),
             keyed_states: RefCell::new(HashMap::new()),
-            effects: RefCell::new(Vec::new()),
-            effect_index: RefCell::new(0),
             keyed_effects: RefCell::new(HashMap::new()),
-            pending_effects: RefCell::new(Vec::new()),
             pending_keyed_effects: RefCell::new(Vec::new()),
             effect_run_count: RefCell::new(0),
             frames_since_decay: RefCell::new(0),
+            channels: RefCell::new(Vec::new()),
+            wake_flag: Arc::new(AtomicBool::new(false)),
         }
     }
 
-    /// Reset the hook indices for a new render pass.
-    /// Note: keyed_states don't need resetting - they're accessed by TypeId, not index.
-    pub fn reset_index(&self) {
-        *self.index.borrow_mut() = 0;
-        *self.effect_index.borrow_mut() = 0;
+    /// Get the wake flag (shared with channel senders for low-latency polling).
+    pub fn wake_flag(&self) -> &Arc<AtomicBool> {
+        &self.wake_flag
     }
 
     /// Get or create state by TypeId key (order-independent).
     ///
-    /// This is the new API that doesn't require hook ordering rules.
     /// The type K acts as the key - same K always returns the same state.
     pub fn use_state_keyed<K: 'static, T: 'static>(&self, init: impl FnOnce() -> T) -> State<T> {
         let key = TypeId::of::<K>();
@@ -119,59 +107,28 @@ impl StateStorage {
         }
     }
 
-    /// Get or create state at the current index (legacy API).
-    ///
-    /// IMPORTANT: Hooks using this API must be called in the same order every render.
-    /// Consider using `use_state_keyed` instead for order-independent state.
-    pub fn use_state<T: 'static>(&self, init: impl FnOnce() -> T) -> State<T> {
-        let mut index = self.index.borrow_mut();
-        let mut states = self.states.borrow_mut();
+    // ========== Keyed Async/Stream/Terminal (order-independent) ==========
 
-        let state = if *index < states.len() {
-            // State already exists, retrieve it
-            let any = &states[*index];
-            any.downcast_ref::<State<T>>()
-                .expect("State type mismatch - hooks called in different order?")
-                .clone()
-        } else {
-            // First render, create new state
-            let state = State::new(init());
-            states.push(Rc::new(state));
-            states
-                .last()
-                .unwrap()
-                .downcast_ref::<State<T>>()
-                .unwrap()
-                .clone()
-        };
-
-        *index += 1;
-        state
-    }
-
-    /// Get or create async state at the current index.
-    pub fn use_async<T, F>(&self, f: F) -> Async<T>
+    /// Get or create async state by TypeId key (order-independent).
+    pub fn use_async_keyed<K: 'static, T, F>(&self, f: F) -> Async<T>
     where
         T: Clone + Send + 'static,
         F: FnOnce() -> Result<T, String> + Send + 'static,
     {
-        let mut index = self.index.borrow_mut();
-        let mut states = self.states.borrow_mut();
+        let key = TypeId::of::<K>();
+        let mut keyed_states = self.keyed_states.borrow_mut();
 
-        let handle = if *index < states.len() {
-            // Async handle already exists, retrieve it
-            let any = &states[*index];
+        let handle = if let Some(any) = keyed_states.get(&key) {
             any.downcast_ref::<AsyncHandle<T>>()
-                .expect("Async type mismatch - hooks called in different order?")
+                .expect("Async type mismatch for keyed async state")
                 .clone()
         } else {
-            // First render, create new async handle
             let handle = AsyncHandle::new();
-            states.push(Rc::new(handle.clone()));
+            keyed_states.insert(key, Rc::new(handle.clone()));
             handle
         };
 
-        *index += 1;
+        drop(keyed_states);
 
         // Start the async operation if not already started
         handle.start(f);
@@ -180,30 +137,27 @@ impl StateStorage {
         handle.poll()
     }
 
-    /// Get or create stream state at the current index.
-    pub fn use_stream<T, F, I>(&self, stream_fn: F) -> StreamHandle<T>
+    /// Get or create stream state by TypeId key (order-independent).
+    pub fn use_stream_keyed<K: 'static, T, F, I>(&self, stream_fn: F) -> StreamHandle<T>
     where
         T: Clone + Default + Send + 'static,
         F: FnOnce() -> I + Send + 'static,
         I: Iterator<Item = T> + Send + 'static,
     {
-        let mut index = self.index.borrow_mut();
-        let mut states = self.states.borrow_mut();
+        let key = TypeId::of::<K>();
+        let mut keyed_states = self.keyed_states.borrow_mut();
 
-        let handle = if *index < states.len() {
-            // Handle already exists, retrieve it
-            let any = &states[*index];
+        let handle = if let Some(any) = keyed_states.get(&key) {
             any.downcast_ref::<StreamHandle<T>>()
-                .expect("Stream type mismatch - hooks called in different order?")
+                .expect("Stream type mismatch for keyed stream state")
                 .clone()
         } else {
-            // First render, create new handle
             let handle = StreamHandle::new();
-            states.push(Rc::new(handle.clone()));
+            keyed_states.insert(key, Rc::new(handle.clone()));
             handle
         };
 
-        *index += 1;
+        drop(keyed_states);
 
         // Start the stream if not already started
         handle.start(stream_fn);
@@ -214,22 +168,17 @@ impl StateStorage {
         handle
     }
 
-    /// Get or create text stream state at the current index.
-    /// Automatically concatenates string tokens.
-    pub fn use_text_stream<F, I>(&self, stream_fn: F) -> TextStreamHandle
+    /// Get or create text stream state by TypeId key (order-independent).
+    pub fn use_text_stream_keyed<K: 'static, F, I>(&self, stream_fn: F) -> TextStreamHandle
     where
         F: FnOnce() -> I + Send + 'static,
         I: Iterator<Item = String> + Send + 'static,
     {
-        self.use_text_stream_with_restart(false, stream_fn)
+        self.use_text_stream_with_restart_keyed::<K, F, I>(false, stream_fn)
     }
 
-    /// Get or create text stream state, with option to restart.
-    ///
-    /// If `restart` is true and a previous stream exists, it will be reset
-    /// before starting the new stream. Use this when you need to start
-    /// a fresh stream (e.g., for a new chat message).
-    pub fn use_text_stream_with_restart<F, I>(
+    /// Get or create text stream state with restart support, by TypeId key (order-independent).
+    pub fn use_text_stream_with_restart_keyed<K: 'static, F, I>(
         &self,
         restart: bool,
         stream_fn: F,
@@ -238,21 +187,20 @@ impl StateStorage {
         F: FnOnce() -> I + Send + 'static,
         I: Iterator<Item = String> + Send + 'static,
     {
-        let mut index = self.index.borrow_mut();
-        let mut states = self.states.borrow_mut();
+        let key = TypeId::of::<K>();
+        let mut keyed_states = self.keyed_states.borrow_mut();
 
-        let handle = if *index < states.len() {
-            let any = &states[*index];
+        let handle = if let Some(any) = keyed_states.get(&key) {
             any.downcast_ref::<TextStreamHandle>()
-                .expect("TextStream type mismatch - hooks called in different order?")
+                .expect("TextStream type mismatch for keyed text stream state")
                 .clone()
         } else {
             let handle = TextStreamHandle::new();
-            states.push(Rc::new(handle.clone()));
+            keyed_states.insert(key, Rc::new(handle.clone()));
             handle
         };
 
-        *index += 1;
+        drop(keyed_states);
 
         // Reset if requested (for starting a new stream)
         if restart {
@@ -268,92 +216,200 @@ impl StateStorage {
         handle
     }
 
-    // ========== Effects ==========
+    /// Get or create a terminal handle by TypeId key (order-independent).
+    pub fn use_terminal_keyed<K: 'static>(&self) -> crate::terminal_state::TerminalHandle {
+        let key = TypeId::of::<K>();
+        let mut keyed_states = self.keyed_states.borrow_mut();
 
-    /// Schedule an effect to run after every render.
-    pub fn use_effect<F, C>(&self, effect_fn: F)
-    where
-        F: FnOnce() -> C + 'static,
-        C: FnOnce() + 'static,
-    {
-        let effect_idx = *self.effect_index.borrow();
-        *self.effect_index.borrow_mut() += 1;
-
-        // Always schedule - runs every render
-        self.pending_effects.borrow_mut().push(PendingEffect {
-            index: effect_idx,
-            effect_fn: Box::new(move || {
-                let cleanup = effect_fn();
-                Some(Box::new(cleanup) as Box<dyn FnOnce()>)
-            }),
-            new_deps: None,
-        });
-    }
-
-    /// Schedule an effect to run only once (on first render).
-    pub fn use_effect_once<F, C>(&self, effect_fn: F)
-    where
-        F: FnOnce() -> C + 'static,
-        C: FnOnce() + 'static,
-    {
-        let effect_idx = *self.effect_index.borrow();
-        *self.effect_index.borrow_mut() += 1;
-
-        let effects = self.effects.borrow();
-        let should_run = effect_idx >= effects.len() || !effects[effect_idx].initialized;
-        drop(effects);
-
-        if should_run {
-            self.pending_effects.borrow_mut().push(PendingEffect {
-                index: effect_idx,
-                effect_fn: Box::new(move || {
-                    let cleanup = effect_fn();
-                    Some(Box::new(cleanup) as Box<dyn FnOnce()>)
-                }),
-                new_deps: None,
-            });
+        if let Some(any) = keyed_states.get(&key) {
+            any.downcast_ref::<crate::terminal_state::TerminalHandle>()
+                .expect("TerminalHandle type mismatch for keyed terminal state")
+                .clone()
+        } else {
+            let handle = crate::terminal_state::TerminalHandle::new(24, 80);
+            keyed_states.insert(key, Rc::new(handle.clone()));
+            handle
         }
     }
 
-    /// Schedule an effect to run when dependencies change.
-    pub fn use_effect_with<D, F, C>(&self, deps: D, effect_fn: F)
+    // ========== Reducer (order-independent) ==========
+
+    /// Get or create a reducer by TypeId key.
+    ///
+    /// Returns `(state, dispatch)` where `dispatch` sends an action through
+    /// the reducer to produce a new state.
+    pub fn use_reducer_keyed<K: 'static, S: Clone + 'static, A: 'static>(
+        &self,
+        initial: S,
+        reducer: impl Fn(S, A) -> S + 'static,
+    ) -> (State<S>, Rc<dyn Fn(A)>) {
+        let state = self.use_state_keyed::<K, S>(|| initial);
+        let state_for_dispatch = state.clone();
+        let reducer = Rc::new(reducer);
+        let dispatch: Rc<dyn Fn(A)> = Rc::new(move |action: A| {
+            let current = state_for_dispatch.get();
+            let next = reducer(current, action);
+            state_for_dispatch.set(next);
+        });
+        (state, dispatch)
+    }
+
+    // ========== Channels / Ports (order-independent) ==========
+
+    /// Get or create a typed inbound channel by TypeId key.
+    pub fn use_channel_keyed<K: 'static, T: 'static>(&self) -> ChannelHandle<T> {
+        let key = TypeId::of::<K>();
+        let mut keyed_states = self.keyed_states.borrow_mut();
+
+        if let Some(any) = keyed_states.get(&key) {
+            any.downcast_ref::<ChannelHandle<T>>()
+                .expect("Channel type mismatch for keyed channel")
+                .clone()
+        } else {
+            let handle = ChannelHandle::new(Arc::clone(&self.wake_flag));
+            keyed_states.insert(key, Rc::new(handle.clone()));
+            // Register for run-loop draining
+            self.channels.borrow_mut().push(Rc::new(handle.clone()) as Rc<dyn ChannelDrain>);
+            handle
+        }
+    }
+
+    /// Get or create a bidirectional port by TypeId key.
+    pub fn use_port_keyed<K: 'static, In: 'static, Out: 'static>(&self) -> PortHandle<In, Out> {
+        let key = TypeId::of::<K>();
+        let mut keyed_states = self.keyed_states.borrow_mut();
+
+        if let Some(any) = keyed_states.get(&key) {
+            any.downcast_ref::<PortHandle<In, Out>>()
+                .expect("Port type mismatch for keyed port")
+                .clone()
+        } else {
+            let handle = PortHandle::new(Arc::clone(&self.wake_flag));
+            keyed_states.insert(key, Rc::new(handle.clone()));
+            // Register the inbound channel for run-loop draining
+            self.channels.borrow_mut().push(Rc::new(handle.rx.clone()) as Rc<dyn ChannelDrain>);
+            handle
+        }
+    }
+
+    /// Create or retrieve a periodic interval by TypeId key.
+    ///
+    /// Spawns a timer thread that fires at the given `duration`. The `callback`
+    /// is called on the main thread each frame that one or more ticks arrived.
+    pub fn use_interval_keyed<K: 'static>(
+        &self,
+        duration: std::time::Duration,
+        callback: impl Fn() + 'static,
+    ) {
+        let key = TypeId::of::<K>();
+        let keyed_states = self.keyed_states.borrow();
+
+        if keyed_states.contains_key(&key) {
+            // Already created — nothing to do. The timer thread is running
+            // and the drain callback is registered.
+            return;
+        }
+        drop(keyed_states);
+
+        let handle = IntervalHandle::new(duration, Rc::new(callback), Arc::clone(&self.wake_flag));
+        self.keyed_states
+            .borrow_mut()
+            .insert(key, Rc::new(handle.clone()));
+        self.channels
+            .borrow_mut()
+            .push(Rc::new(handle) as Rc<dyn ChannelDrain>);
+    }
+
+    /// Drain all registered channels (called by the run loop each frame).
+    pub fn drain_channels(&self) {
+        let channels = self.channels.borrow();
+        for ch in channels.iter() {
+            ch.drain();
+        }
+    }
+
+    /// Clear all channel frame buffers (called at start of each frame).
+    pub fn clear_channels(&self) {
+        let channels = self.channels.borrow();
+        for ch in channels.iter() {
+            ch.clear();
+        }
+    }
+
+    /// Check if any channel has messages this frame.
+    pub fn has_channel_data(&self) -> bool {
+        let channels = self.channels.borrow();
+        channels.iter().any(|ch| ch.has_messages())
+    }
+
+    // ========== Keyed Effects (order-independent) ==========
+
+    /// Schedule a keyed effect to run only once (on first render).
+    /// Order-independent - safe to use in conditionals.
+    pub fn use_effect_once_keyed<K: 'static, F, C>(&self, effect_fn: F)
+    where
+        F: FnOnce() -> C + 'static,
+        C: FnOnce() + 'static,
+    {
+        let key = TypeId::of::<K>();
+        let keyed_effects = self.keyed_effects.borrow();
+        let should_run = !keyed_effects.contains_key(&key)
+            || !keyed_effects.get(&key).map(|e| e.initialized).unwrap_or(false);
+        drop(keyed_effects);
+
+        if should_run {
+            self.pending_keyed_effects
+                .borrow_mut()
+                .push(PendingKeyedEffect {
+                    key,
+                    effect_fn: Box::new(move || {
+                        let cleanup = effect_fn();
+                        Some(Box::new(cleanup) as Box<dyn FnOnce()>)
+                    }),
+                    new_deps: None,
+                });
+        }
+    }
+
+    /// Schedule a keyed effect to run when dependencies change.
+    /// Order-independent - safe to use in conditionals.
+    pub fn use_effect_keyed<K: 'static, D, F, C>(&self, deps: D, effect_fn: F)
     where
         D: PartialEq + Clone + 'static,
         F: FnOnce(&D) -> C + 'static,
         C: FnOnce() + 'static,
     {
-        let effect_idx = *self.effect_index.borrow();
-        *self.effect_index.borrow_mut() += 1;
-
-        let effects = self.effects.borrow();
-        let should_run = if effect_idx >= effects.len() {
-            // First render, always run
-            true
-        } else {
-            // Compare deps
-            match &effects[effect_idx].last_deps {
-                Some(last_deps) => {
-                    match last_deps.downcast_ref::<D>() {
-                        Some(last) => *last != deps,
-                        None => true, // Type mismatch, re-run
+        let key = TypeId::of::<K>();
+        let keyed_effects = self.keyed_effects.borrow();
+        let should_run = match keyed_effects.get(&key) {
+            None => true, // First render, always run
+            Some(effect_state) => {
+                match &effect_state.last_deps {
+                    Some(last_deps) => {
+                        match last_deps.downcast_ref::<D>() {
+                            Some(last) => *last != deps,
+                            None => true, // Type mismatch, re-run
+                        }
                     }
+                    None => true,
                 }
-                None => true,
             }
         };
-        drop(effects);
+        drop(keyed_effects);
 
         if should_run {
             let deps_for_effect = deps.clone();
             let deps_to_store = deps;
-            self.pending_effects.borrow_mut().push(PendingEffect {
-                index: effect_idx,
-                effect_fn: Box::new(move || {
-                    let cleanup = effect_fn(&deps_for_effect);
-                    Some(Box::new(cleanup) as Box<dyn FnOnce()>)
-                }),
-                new_deps: Some(Box::new(deps_to_store)),
-            });
+            self.pending_keyed_effects
+                .borrow_mut()
+                .push(PendingKeyedEffect {
+                    key,
+                    effect_fn: Box::new(move || {
+                        let cleanup = effect_fn(&deps_for_effect);
+                        Some(Box::new(cleanup) as Box<dyn FnOnce()>)
+                    }),
+                    new_deps: Some(Box::new(deps_to_store)),
+                });
         }
     }
 
@@ -364,74 +420,8 @@ impl StateStorage {
     /// Panics if effects run more than MAX_EFFECT_RUNS_PER_WINDOW times within
     /// EFFECT_WINDOW_FRAMES frames, indicating a likely infinite loop.
     pub fn flush_effects(&self) -> bool {
-        let pending: Vec<_> = self.pending_effects.borrow_mut().drain(..).collect();
-        let ran_any = !pending.is_empty();
-
-        for pending_effect in pending {
-            // Cycle detection: check if we've exceeded the threshold
-            let run_count = {
-                let mut count = self.effect_run_count.borrow_mut();
-                *count += 1;
-                *count
-            };
-
-            if run_count > MAX_EFFECT_RUNS_PER_WINDOW {
-                panic!(
-                    "\n\
-                    ┌─ Telex Effect Cycle Detected ─────────────────────────────────┐\n\
-                    │                                                               │\n\
-                    │  An effect has run {} times in {} frames.             │\n\
-                    │  This usually means an effect is updating state that          │\n\
-                    │  triggers itself to run again (infinite loop).                │\n\
-                    │                                                               │\n\
-                    │  Common causes:                                               │\n\
-                    │    • use_effect updating state without dependencies           │\n\
-                    │    • use_effect_with updating its own dependency              │\n\
-                    │                                                               │\n\
-                    │  Fix: Make sure effects don't write to their own deps.        │\n\
-                    │  Effects should flow outward (to external systems) or         │\n\
-                    │  sideways (to different state), not back to their triggers.   │\n\
-                    │                                                               │\n\
-                    └───────────────────────────────────────────────────────────────┘",
-                    run_count,
-                    EFFECT_WINDOW_FRAMES
-                );
-            }
-
-            let mut effects = self.effects.borrow_mut();
-
-            // Ensure effects vec is large enough
-            while effects.len() <= pending_effect.index {
-                effects.push(EffectState {
-                    cleanup: None,
-                    last_deps: None,
-                    initialized: false,
-                });
-            }
-
-            // Run previous cleanup
-            if let Some(cleanup) = effects[pending_effect.index].cleanup.take() {
-                cleanup();
-            }
-
-            // Drop the borrow before running the effect (effect might access state)
-            drop(effects);
-
-            // Run effect, get cleanup
-            let cleanup = (pending_effect.effect_fn)();
-
-            // Store cleanup and mark initialized
-            let mut effects = self.effects.borrow_mut();
-            effects[pending_effect.index].cleanup = cleanup;
-            effects[pending_effect.index].initialized = true;
-            if let Some(new_deps) = pending_effect.new_deps {
-                effects[pending_effect.index].last_deps = Some(new_deps);
-            }
-        }
-
-        // Process keyed effects
         let pending_keyed: Vec<_> = self.pending_keyed_effects.borrow_mut().drain(..).collect();
-        let ran_any = ran_any || !pending_keyed.is_empty();
+        let ran_any = !pending_keyed.is_empty();
 
         for pending_effect in pending_keyed {
             // Cycle detection: check if we've exceeded the threshold
@@ -510,89 +500,8 @@ impl StateStorage {
         }
     }
 
-    // ========== Keyed Effects (order-independent) ==========
-
-    /// Schedule a keyed effect to run only once (on first render).
-    /// Order-independent - safe to use in conditionals.
-    pub fn use_effect_once_keyed<K: 'static, F, C>(&self, effect_fn: F)
-    where
-        F: FnOnce() -> C + 'static,
-        C: FnOnce() + 'static,
-    {
-        let key = TypeId::of::<K>();
-        let keyed_effects = self.keyed_effects.borrow();
-        let should_run = !keyed_effects.contains_key(&key)
-            || !keyed_effects.get(&key).map(|e| e.initialized).unwrap_or(false);
-        drop(keyed_effects);
-
-        if should_run {
-            self.pending_keyed_effects
-                .borrow_mut()
-                .push(PendingKeyedEffect {
-                    key,
-                    effect_fn: Box::new(move || {
-                        let cleanup = effect_fn();
-                        Some(Box::new(cleanup) as Box<dyn FnOnce()>)
-                    }),
-                    new_deps: None,
-                });
-        }
-    }
-
-    /// Schedule a keyed effect to run when dependencies change.
-    /// Order-independent - safe to use in conditionals.
-    pub fn use_effect_keyed<K: 'static, D, F, C>(&self, deps: D, effect_fn: F)
-    where
-        D: PartialEq + Clone + 'static,
-        F: FnOnce(&D) -> C + 'static,
-        C: FnOnce() + 'static,
-    {
-        let key = TypeId::of::<K>();
-        let keyed_effects = self.keyed_effects.borrow();
-        let should_run = match keyed_effects.get(&key) {
-            None => true, // First render, always run
-            Some(effect_state) => {
-                match &effect_state.last_deps {
-                    Some(last_deps) => {
-                        match last_deps.downcast_ref::<D>() {
-                            Some(last) => *last != deps,
-                            None => true, // Type mismatch, re-run
-                        }
-                    }
-                    None => true,
-                }
-            }
-        };
-        drop(keyed_effects);
-
-        if should_run {
-            let deps_for_effect = deps.clone();
-            let deps_to_store = deps;
-            self.pending_keyed_effects
-                .borrow_mut()
-                .push(PendingKeyedEffect {
-                    key,
-                    effect_fn: Box::new(move || {
-                        let cleanup = effect_fn(&deps_for_effect);
-                        Some(Box::new(cleanup) as Box<dyn FnOnce()>)
-                    }),
-                    new_deps: Some(Box::new(deps_to_store)),
-                });
-        }
-    }
-
     /// Run all cleanup functions (called on app exit).
     pub fn cleanup_all_effects(&self) {
-        // Clean up index-based effects
-        let mut effects = self.effects.borrow_mut();
-        for effect in effects.iter_mut() {
-            if let Some(cleanup) = effect.cleanup.take() {
-                cleanup();
-            }
-        }
-        drop(effects);
-
-        // Clean up keyed effects
         let mut keyed_effects = self.keyed_effects.borrow_mut();
         for effect in keyed_effects.values_mut() {
             if let Some(cleanup) = effect.cleanup.take() {
@@ -604,12 +513,15 @@ impl StateStorage {
 
 /// Context passed to components during rendering.
 ///
-/// Provides access to hooks like `use_state`.
+/// Provides access to hooks like `state!`, `effect!`, `stream!`, etc.
 #[derive(Clone)]
 pub struct Scope {
     storage: Rc<StateStorage>,
     commands: Option<Rc<CommandRegistry>>,
     context: Rc<ContextStorage>,
+    /// Component identity for future memoization support.
+    /// Set by the view! macro when rendering child components.
+    component_id: Option<TypeId>,
 }
 
 impl Scope {
@@ -619,16 +531,17 @@ impl Scope {
             storage: Rc::new(StateStorage::new()),
             commands: None,
             context: Rc::new(ContextStorage::new()),
+            component_id: None,
         }
     }
 
     /// Create a scope with existing storage (for re-renders).
     pub fn with_storage(storage: Rc<StateStorage>) -> Self {
-        storage.reset_index();
         Self {
             storage,
             commands: None,
             context: Rc::new(ContextStorage::new()),
+            component_id: None,
         }
     }
 
@@ -637,11 +550,11 @@ impl Scope {
         storage: Rc<StateStorage>,
         commands: Rc<CommandRegistry>,
     ) -> Self {
-        storage.reset_index();
         Self {
             storage,
             commands: Some(commands),
             context: Rc::new(ContextStorage::new()),
+            component_id: None,
         }
     }
 
@@ -651,12 +564,23 @@ impl Scope {
         commands: Rc<CommandRegistry>,
         context: Rc<ContextStorage>,
     ) -> Self {
-        storage.reset_index();
         Self {
             storage,
             commands: Some(commands),
             context,
+            component_id: None,
         }
+    }
+
+    /// Get the component identity (if set by the view! macro).
+    pub fn component_id(&self) -> Option<TypeId> {
+        self.component_id
+    }
+
+    /// Set the component identity (used by the view! macro).
+    pub fn with_component_id(mut self, id: TypeId) -> Self {
+        self.component_id = Some(id);
+        self
     }
 
     /// Get the underlying storage for persistence.
@@ -664,40 +588,12 @@ impl Scope {
         Rc::clone(&self.storage)
     }
 
-    /// Create local state that persists across re-renders.
-    ///
-    /// # Example
-    /// ```rust,ignore
-    /// fn Counter(cx: Scope) -> View {
-    ///     let count = cx.use_state(|| 0);
-    ///     // ...
-    /// }
-    /// ```
-    ///
-    /// **Note:** This API requires hooks to be called in the same order every render.
-    /// For order-independent state, use `state!` macro instead.
-    pub fn use_state<T: 'static>(&self, init: impl FnOnce() -> T) -> State<T> {
-        self.storage.use_state(init)
-    }
-
     /// Create keyed state that persists across re-renders (order-independent).
     ///
-    /// Unlike `use_state`, this can be called conditionally or in any order.
     /// The type K acts as the key - same K always returns the same state.
+    /// Prefer the `state!` macro which auto-generates the key.
     ///
     /// # Example
-    /// ```rust,ignore
-    /// // Define a key type for shared state
-    /// struct CountKey;
-    ///
-    /// fn Counter(cx: Scope) -> View {
-    ///     // Safe to use in conditionals!
-    ///     let count = cx.use_state_keyed::<CountKey, _>(|| 0);
-    ///     // ...
-    /// }
-    /// ```
-    ///
-    /// For independent state, prefer the `state!` macro which auto-generates the key:
     /// ```rust,ignore
     /// let count = state!(cx, || 0);
     /// ```
@@ -705,110 +601,61 @@ impl Scope {
         self.storage.use_state_keyed::<K, T>(init)
     }
 
-    /// Load async data that persists across re-renders.
-    ///
-    /// The function is called once on first render. The result is cached
-    /// and returned on subsequent renders.
+    /// Load keyed async data (order-independent).
+    /// Prefer the `async_data!` macro which auto-generates the key.
     ///
     /// # Example
     /// ```rust,ignore
-    /// fn DataList(cx: Scope) -> View {
-    ///     let data = cx.use_async(|| {
-    ///         // This runs in a background thread
-    ///         Ok(fetch_data())
-    ///     });
-    ///
-    ///     match data {
-    ///         Async::Loading => view! { <Text>"Loading..."</Text> },
-    ///         Async::Ready(items) => view! { <List items={items} /> },
-    ///         Async::Error(e) => view! { <Text>{format!("Error: {}", e)}</Text> },
-    ///     }
-    /// }
+    /// let data = async_data!(cx, || {
+    ///     Ok(fetch_data())
+    /// });
     /// ```
-    pub fn use_async<T, F>(&self, f: F) -> Async<T>
+    pub fn use_async_keyed<K: 'static, T, F>(&self, f: F) -> Async<T>
     where
         T: Clone + Send + 'static,
         F: FnOnce() -> Result<T, String> + Send + 'static,
     {
-        self.storage.use_async(f)
+        self.storage.use_async_keyed::<K, T, F>(f)
     }
 
-    /// Stream data incrementally with automatic accumulation.
-    ///
-    /// Perfect for LLM token streaming or any iterator-based async data.
+    /// Stream data with keyed state (order-independent).
+    /// Prefer the `stream!` macro which auto-generates the key.
     ///
     /// # Example
     /// ```rust,ignore
-    /// fn ChatMessage(cx: Scope) -> View {
-    ///     let stream = cx.use_stream(|| {
-    ///         // Returns an iterator that yields items over time
-    ///         vec!["Hello", " ", "world", "!"].into_iter()
-    ///     });
-    ///
-    ///     if stream.is_loading() {
-    ///         view! { <Text>{stream.get()}</Text><Text>"▌"</Text> }
-    ///     } else {
-    ///         view! { <Text>{stream.get()}</Text> }
-    ///     }
-    /// }
+    /// let elapsed = stream!(cx, || {
+    ///     (0..).inspect(|_| std::thread::sleep(Duration::from_secs(1)))
+    /// });
     /// ```
-    pub fn use_stream<T, F, I>(&self, stream_fn: F) -> StreamHandle<T>
+    pub fn use_stream_keyed<K: 'static, T, F, I>(&self, stream_fn: F) -> StreamHandle<T>
     where
         T: Clone + Default + Send + 'static,
         F: FnOnce() -> I + Send + 'static,
         I: Iterator<Item = T> + Send + 'static,
     {
-        self.storage.use_stream(stream_fn)
+        self.storage.use_stream_keyed::<K, T, F, I>(stream_fn)
     }
 
-    /// Stream text with automatic concatenation.
-    ///
-    /// Convenience wrapper for `use_stream` that automatically concatenates
-    /// string tokens. Ideal for LLM streaming responses.
+    /// Stream text with keyed state (order-independent).
+    /// Prefer the `text_stream!` macro which auto-generates the key.
     ///
     /// # Example
     /// ```rust,ignore
-    /// fn StreamingChat(cx: Scope) -> View {
-    ///     let response = cx.use_text_stream(|| {
-    ///         // Simulate LLM token stream
-    ///         llm_client.stream_completion("Hello!")
-    ///     });
-    ///
-    ///     let cursor = if response.is_loading() { "▌" } else { "" };
-    ///     view! { <Text>{format!("{}{}", response.get(), cursor)}</Text> }
-    /// }
+    /// let logs = text_stream!(cx, || {
+    ///     generate_log_entries()
+    /// });
     /// ```
-    pub fn use_text_stream<F, I>(&self, stream_fn: F) -> TextStreamHandle
+    pub fn use_text_stream_keyed<K: 'static, F, I>(&self, stream_fn: F) -> TextStreamHandle
     where
         F: FnOnce() -> I + Send + 'static,
         I: Iterator<Item = String> + Send + 'static,
     {
-        self.storage.use_text_stream(stream_fn)
+        self.storage.use_text_stream_keyed::<K, F, I>(stream_fn)
     }
 
-    /// Stream text with automatic concatenation and restart support.
-    ///
-    /// Like `use_text_stream`, but allows forcing a restart when `restart` is true.
-    /// Use this when you need to start a fresh stream for each new request.
-    ///
-    /// # Example
-    /// ```rust,ignore
-    /// fn Chat(cx: Scope) -> View {
-    ///     let request_id = cx.use_state(|| 0u32);
-    ///     let last_id = cx.use_state(|| 0u32);
-    ///
-    ///     let needs_restart = request_id.get() != last_id.get();
-    ///     let stream = cx.use_text_stream_with_restart(needs_restart, || {
-    ///         stream_response()
-    ///     });
-    ///
-    ///     if needs_restart {
-    ///         last_id.set(request_id.get());
-    ///     }
-    ///     // ...
-    /// }
-    /// ```
-    pub fn use_text_stream_with_restart<F, I>(
+    /// Stream text with restart support, keyed state (order-independent).
+    /// Prefer the `text_stream_with_restart!` macro which auto-generates the key.
+    pub fn use_text_stream_with_restart_keyed<K: 'static, F, I>(
         &self,
         restart: bool,
         stream_fn: F,
@@ -818,7 +665,91 @@ impl Scope {
         I: Iterator<Item = String> + Send + 'static,
     {
         self.storage
-            .use_text_stream_with_restart(restart, stream_fn)
+            .use_text_stream_with_restart_keyed::<K, F, I>(restart, stream_fn)
+    }
+
+    /// Create or get a keyed terminal handle (order-independent).
+    /// Prefer the `terminal!` macro which auto-generates the key.
+    ///
+    /// # Example
+    /// ```rust,ignore
+    /// let terminal = terminal!(cx);
+    /// ```
+    pub fn use_terminal_keyed<K: 'static>(&self) -> crate::terminal_state::TerminalHandle {
+        self.storage.use_terminal_keyed::<K>()
+    }
+
+    /// Create a reducer (order-independent).
+    /// Prefer the `reducer!` macro which auto-generates the key.
+    ///
+    /// Returns `(state, dispatch)` where `dispatch` sends actions through
+    /// the reducer function to produce new state.
+    ///
+    /// # Example
+    /// ```rust,ignore
+    /// let (state, dispatch) = reducer!(cx, AppState::Idle, |state, action| {
+    ///     match (state, action) {
+    ///         (_, Action::Reset) => AppState::Idle,
+    ///         (s, _) => s,
+    ///     }
+    /// });
+    /// ```
+    pub fn use_reducer_keyed<K: 'static, S: Clone + 'static, A: 'static>(
+        &self,
+        initial: S,
+        reducer: impl Fn(S, A) -> S + 'static,
+    ) -> (State<S>, Rc<dyn Fn(A)>) {
+        self.storage.use_reducer_keyed::<K, S, A>(initial, reducer)
+    }
+
+    /// Create a typed inbound channel (order-independent).
+    /// Prefer the `channel!` macro which auto-generates the key.
+    ///
+    /// # Example
+    /// ```rust,ignore
+    /// let ch = channel!(cx, String);
+    /// let tx = ch.tx();
+    /// // hand tx to an external thread
+    /// for msg in ch.get() { /* ... */ }
+    /// ```
+    pub fn use_channel_keyed<K: 'static, T: 'static>(&self) -> ChannelHandle<T> {
+        self.storage.use_channel_keyed::<K, T>()
+    }
+
+    /// Create a bidirectional port (order-independent).
+    /// Prefer the `port!` macro which auto-generates the key.
+    ///
+    /// # Example
+    /// ```rust,ignore
+    /// let midi = port!(cx, MidiIn, MidiOut);
+    /// let inbound_tx = midi.rx.tx();  // external sends MidiIn here
+    /// let outbound_tx = midi.tx();    // component sends MidiOut here
+    /// for msg in midi.rx.get() { /* ... */ }
+    /// ```
+    pub fn use_port_keyed<K: 'static, In: 'static, Out: 'static>(&self) -> PortHandle<In, Out> {
+        self.storage.use_port_keyed::<K, In, Out>()
+    }
+
+    /// Create a periodic interval (order-independent).
+    /// Prefer the `interval!` macro which auto-generates the key.
+    ///
+    /// The callback runs on the main thread each frame that the timer fired.
+    /// Internally uses a channel + timer thread.
+    ///
+    /// # Example
+    /// ```rust,ignore
+    /// let count = state!(cx, || 0u64);
+    /// let c = count.clone();
+    /// interval!(cx, Duration::from_secs(1), move || {
+    ///     c.update(|n| *n += 1);
+    /// });
+    /// ```
+    pub fn use_interval_keyed<K: 'static>(
+        &self,
+        duration: std::time::Duration,
+        callback: impl Fn() + 'static,
+    ) {
+        self.storage.use_interval_keyed::<K>(duration, callback)
     }
 
     /// Register a keyboard command/shortcut.
@@ -829,7 +760,7 @@ impl Scope {
     /// # Example
     /// ```rust,ignore
     /// fn App(cx: Scope) -> View {
-    ///     let count = cx.use_state(|| 0);
+    ///     let count = state!(cx, || 0);
     ///     let c = count.clone();
     ///
     ///     // Ctrl+R to reset counter
@@ -863,7 +794,6 @@ impl Scope {
     /// }
     ///
     /// fn App(cx: Scope) -> View {
-    ///     // Provide user state for all children
     ///     cx.provide_context(UserState {
     ///         name: "Alice".to_string(),
     ///         logged_in: true,
@@ -900,104 +830,8 @@ impl Scope {
         Rc::clone(&self.context)
     }
 
-    // ========== Effects ==========
-    //
-    // Experimental API - newly implemented, may have edge cases or API changes.
-
-    /// Run a side effect after every render.
-    ///
-    /// The effect function is called after each render completes.
-    /// Return a cleanup function that will be called before the next effect runs.
-    ///
-    /// # Example
-    /// ```rust,ignore
-    /// fn Logger(cx: Scope) -> View {
-    ///     let count = cx.use_state(|| 0);
-    ///
-    ///     cx.use_effect(|| {
-    ///         println!("Rendered with count: {}", count.get());
-    ///         || {} // cleanup (runs before next effect)
-    ///     });
-    ///
-    ///     // ...
-    /// }
-    /// ```
-    ///
-    /// **Warning:** Be careful not to create infinite loops by updating state
-    /// in an effect that runs every render.
-    pub fn use_effect<F, C>(&self, effect_fn: F)
-    where
-        F: FnOnce() -> C + 'static,
-        C: FnOnce() + 'static,
-    {
-        self.storage.use_effect(effect_fn)
-    }
-
-    /// Run a side effect only once (on first render).
-    ///
-    /// The effect function is called only on the first render.
-    /// The cleanup function is called on app exit.
-    ///
-    /// # Example
-    /// ```rust,ignore
-    /// fn App(cx: Scope) -> View {
-    ///     cx.use_effect_once(|| {
-    ///         println!("App initialized");
-    ///         || {
-    ///             println!("App cleanup");
-    ///         }
-    ///     });
-    ///
-    ///     // ...
-    /// }
-    /// ```
-    pub fn use_effect_once<F, C>(&self, effect_fn: F)
-    where
-        F: FnOnce() -> C + 'static,
-        C: FnOnce() + 'static,
-    {
-        self.storage.use_effect_once(effect_fn)
-    }
-
-    /// Run a side effect when dependencies change.
-    ///
-    /// The effect function is called on first render and whenever the
-    /// dependencies change (compared via `PartialEq`).
-    ///
-    /// # Example
-    /// ```rust,ignore
-    /// fn Counter(cx: Scope) -> View {
-    ///     let count = cx.use_state(|| 0);
-    ///
-    ///     cx.use_effect_with(count.get(), |count| {
-    ///         println!("Count changed to: {}", count);
-    ///         || {} // cleanup
-    ///     });
-    ///
-    ///     // ...
-    /// }
-    /// ```
-    ///
-    /// Multiple dependencies can be passed as a tuple:
-    /// ```rust,ignore
-    /// cx.use_effect_with((a.get(), b.get()), |(a, b)| {
-    ///     println!("a={}, b={}", a, b);
-    ///     || {}
-    /// });
-    /// ```
-    pub fn use_effect_with<D, F, C>(&self, deps: D, effect_fn: F)
-    where
-        D: PartialEq + Clone + 'static,
-        F: FnOnce(&D) -> C + 'static,
-        C: FnOnce() + 'static,
-    {
-        self.storage.use_effect_with(deps, effect_fn)
-    }
-
     // ========== Keyed Effects (order-independent) ==========
     //
-    // These are the recommended effect APIs. Unlike index-based effects,
-    // keyed effects can be used conditionally or in any order.
     // Use the effect!() and effect_once!() macros for convenient access.
 
     /// Run a keyed side effect only once (on first render).
@@ -1035,41 +869,6 @@ impl Scope {
         C: FnOnce() + 'static,
     {
         self.storage.use_effect_keyed::<K, D, F, C>(deps, effect_fn)
-    }
-
-    /// Create or get a terminal handle.
-    ///
-    /// This uses keyed state internally so it's safe to use in conditionals.
-    /// Each call site gets its own terminal handle based on the call location.
-    ///
-    /// # Example
-    /// ```rust,ignore
-    /// let terminal = cx.use_terminal();
-    /// if !terminal.is_started() {
-    ///     terminal.spawn("bash", &[], 80, 24);
-    /// }
-    /// terminal.poll();
-    /// View::terminal().handle(terminal).build()
-    /// ```
-    #[track_caller]
-    pub fn use_terminal(&self) -> crate::terminal_state::TerminalHandle {
-        // For simplicity in MVP, just use indexed state
-        // This requires maintaining call order like other use_* hooks
-        let mut index = self.storage.index.borrow_mut();
-        let mut states = self.storage.states.borrow_mut();
-
-        if *index < states.len() {
-            let any = &states[*index];
-            *index += 1;
-            any.downcast_ref::<crate::terminal_state::TerminalHandle>()
-                .expect("TerminalHandle type mismatch - hooks called in different order?")
-                .clone()
-        } else {
-            let handle = crate::terminal_state::TerminalHandle::new(24, 80);
-            states.push(Rc::new(handle.clone()));
-            *index += 1;
-            handle
-        }
     }
 }
 
