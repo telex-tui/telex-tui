@@ -1,18 +1,13 @@
 name: Deploy Book
 
-# NOTE: This workflow is ready for launch but currently disabled.
-# GitHub Pages only works for public repos. Once the repo is public,
-# uncomment the 'on:' triggers below to enable automatic deployment.
-
 on:
-  # Disabled until repository is made public
-  # push:
-  #   branches:
-  #     - main
-  #   paths:
-  #     - 'docs/book/**'
-  #     - '.github/workflows/book.yml'
-  workflow_dispatch:  # Manual trigger available for testing
+  push:
+    branches:
+      - main
+    paths:
+      - 'docs/book/**'
+      - '.github/workflows/book.yml'
+  workflow_dispatch:
 
 permissions:
   contents: read
