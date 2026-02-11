@@ -354,7 +354,7 @@ Telex follows a layered architecture where each layer only depends on layers bel
 ## Module Structure
 
 ```
-crates/rte/src/
+crates/telex/src/
 ├── lib.rs         # Public API, run()
 ├── view.rs        # View enum, builders
 ├── state.rs       # State<T>
@@ -366,7 +366,7 @@ crates/rte/src/
 ├── terminal.rs    # crossterm wrapper
 └── prelude.rs     # Re-exports
 
-crates/rte-macro/src/
+crates/telex-macro/src/
 └── lib.rs         # view! proc macro
 ```
 

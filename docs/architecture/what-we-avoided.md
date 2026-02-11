@@ -332,7 +332,7 @@ Problems:
 
 ### Our Approach: Synchronous Core
 
-Phase 2 is entirely synchronous:
+Telex is entirely synchronous:
 
 ```rust
 pub fn run<C: Component>(root: C) -> Result<()> {
@@ -365,7 +365,7 @@ let on_press = move || {
 **No runtime dependency:**
 ```toml
 [dependencies]
-rte = "0.1"
+telex-tui = "0.2"
 # No tokio, no async-std
 ```
 
@@ -380,7 +380,7 @@ fn test_render() {
 
 ### When Async Will Be Needed
 
-Phase 6 will add `use_async` for:
+A future release will add `use_async` for:
 - Network requests
 - File I/O
 - Long-running computations
@@ -431,7 +431,7 @@ But users don't see this. They get a clean API.
 We're not saying "never":
 - Lifetimes might appear in advanced APIs
 - Unsafe might be needed for performance-critical paths
-- Async will come in Phase 6
+- Async will come in a future release
 
 We're saying "not yet" and "not by default."
 

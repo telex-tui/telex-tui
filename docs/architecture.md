@@ -1,6 +1,6 @@
 # How Telex Works: Rust Design & Thinking
 
-This document explains the Rust design decisions behind Telex's implementation through Phase 2.
+This document explains the Rust design decisions behind Telex.
 
 ---
 
@@ -280,7 +280,7 @@ view! {
     <Button on_press={move || count.update(|n| *n += 1)}>"+"</Button>
 }
 // Expands to:
-rte::View::button()
+telex::View::button()
     .on_press(move || count.update(|n| *n += 1))
     .label("+")
     .build()
@@ -438,7 +438,7 @@ No `lazy_static!` or thread-locals for state storage. State lives in `StateStora
 
 ### 5.4 Async Complexity
 
-Phase 2 is synchronous. State updates happen immediately, and the next render sees them. Async will come in Phase 6 with `use_async`.
+Telex is synchronous. State updates happen immediately, and the next render sees them. Async support is planned.
 
 📖 **[Deep Dive: What We Avoided →](architecture/what-we-avoided.md)**
 
@@ -462,21 +462,21 @@ These are reasonable for a TUI framework. Terminals are small, updates are infre
 
 ## 7. Future Considerations
 
-### For Phase 3+ (Layout)
+### Layout
 
 The current layout (equal distribution) is naive. Real layout needs:
 - Constraint solving (min/max/preferred sizes)
 - Flex factors
 - Possibly a layout cache
 
-### For Phase 6 (Async)
+### Async
 
 `use_async` will need:
 - A way to trigger re-renders from async tasks
 - Probably `tokio` or `async-std` integration
 - State that represents Loading/Ready/Error
 
-### For Performance
+### Performance
 
 If needed:
 - Cache layout calculations

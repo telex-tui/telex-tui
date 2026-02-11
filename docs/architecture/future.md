@@ -4,9 +4,9 @@
 
 ---
 
-This document explores what comes next for Telex, examining the design decisions that will shape future phases and how the current architecture supports growth.
+This document explores what comes next for Telex, examining the design decisions that will shape future development and how the current architecture supports growth.
 
-## Phase 3: Reactive Primitives
+## Reactive Primitives
 
 ### Derived State
 
@@ -96,7 +96,7 @@ See `docs/use-effect-design.md` and example `32_effects` for full documentation.
 
 ---
 
-## Phase 4: Layout System
+## Layout System
 
 ### Current: Simple Division
 
@@ -178,7 +178,7 @@ impl Buffer {
 
 ---
 
-## Phase 5: Input Handling
+## Input Handling
 
 ### Current: Global Key Handling
 
@@ -275,7 +275,7 @@ fn LoginForm(cx: Scope) -> View {
 
 ---
 
-## Phase 6: Async Support
+## Async Support
 
 ### The Challenge
 
@@ -353,7 +353,7 @@ smol::block_on(main_loop());
 
 ---
 
-## Phase 7+: Advanced Features
+## Advanced Features
 
 ### Context (Dependency Injection)
 
@@ -535,7 +535,7 @@ pub trait Widget {
 **Future option 2: Macro-based registration**
 
 ```rust
-#[rte::widget]
+#[telex::widget]
 pub struct Sparkline {
     data: Vec<f64>,
     max: f64,
@@ -680,7 +680,7 @@ pub fn computed(...) { ... }
 | TextInput | High | Critical - forms |
 | use_async | High | Critical - real apps |
 
-### Long Term (Phase 7+)
+### Long Term
 
 | Feature | Complexity | Impact |
 |---------|------------|--------|

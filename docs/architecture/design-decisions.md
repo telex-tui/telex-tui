@@ -692,10 +692,10 @@ view! {
 Expands to:
 
 ```rust
-rte::View::vstack()
-    .child(rte::View::text("Hello"))
+telex::View::vstack()
+    .child(telex::View::text("Hello"))
     .child(
-        rte::View::button()
+        telex::View::button()
             .on_press(|| count.update(|n| *n += 1))
             .label("+")
             .build()
