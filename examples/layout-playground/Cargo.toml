@@ -1,0 +1,8 @@
+[package]
+name = "layout-playground"
+version.workspace = true
+edition.workspace = true
+description = "Interactive layout playground for learning telex layout system"
+
+[dependencies]
+telex-tui = { path = "../../crates/telex" }

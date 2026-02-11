@@ -1,0 +1,20 @@
+[book]
+title = "The Telex Book"
+authors = ["Telex Contributors"]
+description = "A guide to building terminal UIs with Telex"
+language = "en"
+src = "src"
+
+[build]
+build-dir = "book"
+
+[output.html]
+default-theme = "navy"
+preferred-dark-theme = "navy"
+git-repository-url = "https://github.com/telex-tui/telex-tui"
+edit-url-template = "https://github.com/telex-tui/telex-tui/edit/main/docs/book/{path}"
+additional-css = ["theme/custom.css"]
+
+[output.html.playground]
+editable = false
+runnable = false

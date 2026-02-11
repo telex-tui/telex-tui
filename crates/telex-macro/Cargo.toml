@@ -1,0 +1,17 @@
+[package]
+name = "telex-macro"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Procedural macros for telex-tui"
+repository = "https://github.com/telex-tui/telex-tui"
+keywords = ["tui", "macros", "proc-macro"]
+categories = ["command-line-interface"]
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2 = "1.0"
+quote = "1.0"
+syn = { version = "2.0", features = ["full"] }

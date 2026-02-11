@@ -1,0 +1,23 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/telex",
+    "crates/telex-macro",
+    "examples/chat",
+    "examples/layout-showcase",
+    "examples/layout-playground",
+    "examples/perf-test", "play/demo",
+]
+
+[workspace.package]
+version = "0.2.0"
+edition = "2021"
+license = "MIT"
+
+[workspace.dependencies]
+telex-tui = { path = "crates/telex" }
+telex-macro = { path = "crates/telex-macro" }
+crossterm = "0.28"
+proc-macro2 = "1.0"
+quote = "1.0"
+syn = { version = "2.0", features = ["full"] }

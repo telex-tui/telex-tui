@@ -1,0 +1,8 @@
+[package]
+name = "perf-test"
+version.workspace = true
+edition.workspace = true
+description = "Performance stress test for telex TUI framework"
+
+[dependencies]
+telex-tui = { path = "../../crates/telex" }

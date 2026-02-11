@@ -1,0 +1,29 @@
+/* Center logo on introduction page */
+.logo-container {
+    text-align: center;
+    margin: 2rem 0;
+}
+
+.logo-container img {
+    max-width: 200px;
+    height: auto;
+}
+
+/* Experimental warning styling */
+blockquote:has(strong:first-child) {
+    background: linear-gradient(135deg, rgba(255, 152, 0, 0.1) 0%, rgba(244, 67, 54, 0.1) 100%);
+    border-left: 4px solid #ff9800;
+    padding: 1.5rem;
+    margin: 2rem 0;
+    border-radius: 4px;
+}
+
+blockquote:has(strong:first-child) strong:first-child {
+    color: #ff9800;
+    font-size: 1.1em;
+}
+
+/* Experimental feature warnings in content */
+blockquote > p:first-child:has(strong:contains("Experimental")) {
+    color: #ff9800;
+}

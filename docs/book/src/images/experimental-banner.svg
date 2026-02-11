@@ -1,0 +1,28 @@
+<svg width="600" height="80" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="warningGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#ff9800;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#f44336;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="600" height="80" fill="#1e1e1e" rx="8"/>
+  
+  <!-- Warning stripe pattern -->
+  <rect x="0" y="0" width="8" height="80" fill="url(#warningGradient)" rx="8 0 0 8"/>
+  
+  <!-- Icon -->
+  <g transform="translate(30, 25)">
+    <circle cx="15" cy="15" r="15" fill="#ff9800" opacity="0.2"/>
+    <path d="M 15 8 L 15 20 M 15 24 L 15 26" stroke="#ff9800" stroke-width="2.5" stroke-linecap="round"/>
+  </g>
+  
+  <!-- Text -->
+  <text x="75" y="35" font-family="monospace" font-size="20" font-weight="bold" fill="#ff9800">
+    EXPERIMENTAL
+  </text>
+  <text x="75" y="55" font-family="monospace" font-size="14" fill="#bbbbbb">
+    Documentation under active development
+  </text>
+</svg>

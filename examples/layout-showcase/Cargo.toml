@@ -1,0 +1,8 @@
+[package]
+name = "layout-showcase"
+version.workspace = true
+edition.workspace = true
+description = "Layout and widget showcase for Telex TUI framework"
+
+[dependencies]
+telex-tui = { workspace = true }
