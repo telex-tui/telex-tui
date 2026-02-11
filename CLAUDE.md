@@ -18,7 +18,7 @@ crates/
       channel.rs   # Channel/port primitives for external events
       widget.rs    # Custom widget trait (escape hatch)
       text.rs      # Grapheme-aware text wrapping utilities
-    examples/      # Numbered examples (01-33)
+    examples/      # Numbered examples (01-39)
   telex-macro/     # view!, state!, effect!, effect_once!, with!, channel!, port!, interval!, reducer!, stream!, async_data!, terminal!, text_stream! proc macros
 examples/
   chat/            # AI chat app (multi-provider: Anthropic, OpenAI, Gemini, Ollama)

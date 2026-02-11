@@ -13,6 +13,8 @@ let (state, dispatch) = reducer!(cx, AppState::Idle, |state, action| {
 });
 ```
 
+Run with: `cargo run -p telex-tui --example 36_reducer`
+
 ## What is reducer!?
 
 `reducer!` creates a state/dispatch pair — a pattern familiar from React's `useReducer` or Redux. Instead of mutating state directly, you dispatch actions that a reducer function processes into new state.

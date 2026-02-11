@@ -84,7 +84,7 @@ macro_rules! require_api {
 // =============================================================================
 
 mod async_state;
-mod buffer;
+pub mod buffer;
 pub mod canvas;
 pub mod channel;
 mod command;

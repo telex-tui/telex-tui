@@ -617,6 +617,118 @@ cargo run -p telex-tui --example 33_terminal
 
 ---
 
+## 34_channels_and_intervals
+
+**Live clock + background worker.** Demonstrates external event handling with `channel!` and `interval!`.
+
+```bash
+cargo run -p telex-tui --example 34_channels_and_intervals
+```
+
+**What it shows:**
+- `interval!` for periodic callbacks (tick counter every second)
+- `channel!` for receiving messages from background threads
+- `ch.tx()` returns a `WakingSender` for zero-latency wake-up
+- `ch.get()` reads this frame's messages
+- Spawning worker threads that report back via channels
+
+**Code:** ~120 lines
+
+---
+
+## 35_slider
+
+**RGB color mixer.** Three sliders control red, green, and blue channels with a live color preview.
+
+```bash
+cargo run -p telex-tui --example 35_slider
+```
+
+**What it shows:**
+- `View::slider()` with `.min()`, `.max()`, `.step()`, `.value()`, `.label()`
+- `.on_change()` callback receives `f64`
+- `Color::Rgb { r, g, b }` for true-color styled text
+- Left/Right arrow keys to adjust slider values
+
+**Code:** ~80 lines
+
+---
+
+## 36_reducer
+
+**Multi-step wizard.** A state machine driven by the `reducer!` macro.
+
+```bash
+cargo run -p telex-tui --example 36_reducer
+```
+
+**What it shows:**
+- `reducer!(cx, initial, |state, action| ...)` for action-dispatched state
+- Returns `(State<S>, Rc<dyn Fn(A)>)` dispatch pair
+- Pattern matching `(state, action)` tuples for transitions
+- Centralized state logic vs scattered booleans
+- Multi-step wizard with Back/Next navigation
+
+**Code:** ~130 lines
+
+---
+
+## 37_error_boundary
+
+**Crash test.** Deliberately panics inside an error boundary to demonstrate graceful degradation.
+
+```bash
+cargo run -p telex-tui --example 37_error_boundary
+```
+
+**What it shows:**
+- `View::error_boundary()` with `.child()` and `.fallback()`
+- Catches panics in child views without crashing the app
+- Red fallback view replaces the panicked component
+- Reset to recover from the error state
+
+**Code:** ~90 lines
+
+---
+
+## 38_custom_widget
+
+**Game of Life.** Conway's cellular automaton via the `Widget` trait escape hatch.
+
+```bash
+cargo run -p telex-tui --example 38_custom_widget
+```
+
+**What it shows:**
+- `impl Widget for YourStruct` with `render(area, buf)`
+- `buf.set(x, y, char, fg, bg)` for direct character-cell rendering
+- `height_hint()` / `width_hint()` for layout sizing
+- `View::custom(Rc::new(RefCell::new(widget)))` to embed
+- `interval!` for auto-stepping animation
+
+**Code:** ~180 lines
+
+---
+
+## 39_port
+
+**Background task runner.** Bidirectional communication via `port!`.
+
+```bash
+cargo run -p telex-tui --example 39_port
+```
+
+**What it shows:**
+- `port!(cx, InboundType, OutboundType)` for two-way channels
+- `port.rx.tx()` sends inbound messages (worker -> UI)
+- `port.tx()` sends outbound commands (UI -> worker)
+- `port.take_outbound_rx()` passes receiver to worker thread
+- Progress bar, cancellation, and result display
+
+**Code:** ~120 lines
+
+---
+
 ## Example Apps
 
 Beyond the numbered examples, there are complete application examples:

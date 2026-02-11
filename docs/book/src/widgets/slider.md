@@ -15,6 +15,8 @@ View::slider()
     .build()
 ```
 
+Run with: `cargo run -p telex-tui --example 35_slider`
+
 ## Builder API
 
 ```rust

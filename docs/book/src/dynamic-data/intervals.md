@@ -12,6 +12,8 @@ interval!(cx, Duration::from_secs(1), with!(ticks => move || {
 View::text(format!("Ticks: {}", ticks.get()))
 ```
 
+Run with: `cargo run -p telex-tui --example 34_channels_and_intervals`
+
 ## What is interval!?
 
 `interval!` sets up a repeating timer that fires a callback on the main thread. Under the hood, it spawns a background thread with a `WakingSender` channel — the timer thread sends a wake-up signal, and the callback runs during the next frame.

@@ -25,6 +25,8 @@ impl Widget for Sparkline {
 View::custom(Rc::new(RefCell::new(sparkline)))
 ```
 
+Run with: `cargo run -p telex-tui --example 38_custom_widget`
+
 ## The Widget trait
 
 ```rust

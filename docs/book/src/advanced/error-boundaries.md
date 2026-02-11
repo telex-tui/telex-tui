@@ -9,6 +9,8 @@ View::error_boundary()
     .build()
 ```
 
+Run with: `cargo run -p telex-tui --example 37_error_boundary`
+
 ## What are error boundaries?
 
 Error boundaries wrap a child view tree and catch any panics that occur during rendering. Instead of crashing the entire application, the boundary renders a fallback view.

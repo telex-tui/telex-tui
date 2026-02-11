@@ -20,7 +20,7 @@ for msg in ch.get() {
 }
 ```
 
-Run with: `cargo run -p telex-tui --example 26_channels`
+Run with: `cargo run -p telex-tui --example 34_channels_and_intervals`
 
 ## What are channels?
 

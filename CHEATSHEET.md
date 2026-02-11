@@ -477,6 +477,6 @@ TELEX_DEBUG=1 cargo run -p telex-tui --example 02_counter
 
 ## Links
 
-- [Examples](crates/telex/examples/) - 33 runnable examples
+- [Examples](crates/telex/examples/) - 39 runnable examples
 - [API Docs](https://docs.rs/telex-tui) - Full API reference
 - [Architecture](docs/architecture.md) - Design decisions

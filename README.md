@@ -29,7 +29,7 @@ cargo run -p telex-tui --example 02_counter
 
 > Press **F1** in any example to see what it demonstrates.
 
-There are 33 numbered examples covering everything from hello world to an embedded terminal emulator. See the [Examples Guide](docs/examples.md) for the full list.
+There are 39 numbered examples covering everything from hello world to an embedded terminal emulator. See the [Examples Guide](docs/examples.md) for the full list.
 
 ### As a dependency
 
@@ -115,7 +115,7 @@ Canvas and Image require a Kitty-compatible terminal (Kitty, Ghostty, WezTerm).
 |---|---|
 | [**The Telex Book**](https://telex-tui.github.io/telex-tui/) | Guide from hello world to real applications |
 | [Blog](https://telex-tui.github.io/blog/) | News and updates |
-| [Examples](docs/examples.md) | All 33 examples with explanations |
+| [Examples](docs/examples.md) | All 39 examples with explanations |
 | [Architecture](docs/architecture.md) | Design decisions and trade-offs |
 | `cargo doc -p telex-tui --open` | API reference |
 
@@ -126,7 +126,7 @@ Canvas and Image require a Kitty-compatible terminal (Kitty, Ghostty, WezTerm).
 ```
 telex-tui/
 ├── crates/
-│   ├── telex/           # Core framework + 33 examples
+│   ├── telex/           # Core framework + 39 examples
 │   └── telex-macro/     # view!, state!, effect!, effect_once!, with!, stream!, async_data!, text_stream!, terminal!, channel!, port!, interval!, reducer! proc macros
 ├── examples/
 │   ├── chat/            # AI chat app (multi-provider)

@@ -383,7 +383,7 @@ fn test_form_submission_workflow() {
 
 ## 10. Example Compilation Check
 
-The numbered examples in `crates/telex/examples/` (01-33) are the runnable code that the mdbook references. A test ensures they all compile when the API changes.
+The numbered examples in `crates/telex/examples/` (01-39) are the runnable code that the mdbook references. A test ensures they all compile when the API changes.
 
 ### Running it
 
