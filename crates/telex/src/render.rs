@@ -378,12 +378,15 @@ fn render_slider(buffer: &mut Buffer, node: &SliderNode, area: Rect, ctx: &mut R
         format!("{:.1}", node.value)
     };
 
+    // Show focus marker: "▸ " when focused, "  " when not (keeps alignment stable)
+    let focus_marker = if is_focused { "▸ " } else { "  " };
+
     let label_prefix = match &node.label {
-        Some(l) => format!("{} ", l),
-        None => String::new(),
+        Some(l) => format!("{}{} ", focus_marker, l),
+        None => format!("{}", focus_marker),
     };
 
-    // Reserve space: label + value display + brackets + 1 space
+    // Reserve space: focus marker + label + value display + brackets + 1 space
     let reserved = label_prefix.len() + value_str.len() + 3; // "[] " + value
     let track_width = if (area.width as usize) > reserved + 4 {
         area.width as usize - reserved
@@ -408,13 +411,14 @@ fn render_slider(buffer: &mut Buffer, node: &SliderNode, area: Rect, ctx: &mut R
         (theme.foreground, theme.secondary)
     };
 
-    // Write label prefix
+    // Write label prefix (bold when focused)
+    let label_bold = is_focused;
     let mut x = area.x;
     for ch in label_prefix.chars() {
         if x >= area.x + area.width {
             break;
         }
-        buffer.set(x, area.y, ch, fg, theme.background);
+        buffer.set_cell(x, area.y, crate::buffer::Cell::styled(ch, fg, theme.background, label_bold, false, false, false));
         x += 1;
     }
 

@@ -74,7 +74,7 @@ impl Component for App {
                     .build(),
             )
             .child(View::styled_text(format!("#{:02X}{:02X}{:02X}", rv, gv, bv)).bold().build())
-            .child(View::styled_text("F1 help • Ctrl+Q quit").dim().build())
+            .child(View::styled_text("Tab: switch slider • Left/Right: adjust • F1: help • Ctrl+Q: quit").dim().build())
             .child(
                 View::modal()
                     .visible(show_help.get())

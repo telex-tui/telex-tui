@@ -7,12 +7,29 @@
 
 use crossterm::event::KeyCode;
 use crossterm::style::Color;
+use telex::buffer::{Buffer, Rect};
 use telex::prelude::*;
+use telex::widget::Widget;
 
 telex::require_api!(0, 2);
 
 fn main() {
     telex::run(App).unwrap();
+}
+
+/// A widget that panics at render time when the counter reaches 5.
+struct RiskyCounter(i32);
+
+impl Widget for RiskyCounter {
+    fn render(&self, area: Rect, buf: &mut Buffer) {
+        assert!(self.0 < 5, "Counter hit 5 — boom!");
+        let text = format!("Counter: {} (panics at 5)", self.0);
+        buf.write_str(area.x, area.y, &text, Color::Green, Color::Reset);
+    }
+
+    fn height_hint(&self, _width: u16) -> Option<u16> {
+        Some(1)
+    }
 }
 
 struct App;
@@ -28,15 +45,10 @@ impl Component for App {
 
         let count = state!(cx, || 0i32);
 
-        // This view panics when count >= 5
-        let risky_view = {
-            let c = count.get();
-            assert!(c < 5, "Counter hit 5 — boom!");
-            View::vstack()
-                .child(View::styled_text(format!("Counter: {}", c)).color(Color::Green).bold().build())
-                .child(View::text("(panics at 5)"))
-                .build()
-        };
+        // The panic must happen at render time (inside render_view) so the
+        // error boundary's catch_unwind can catch it. A custom widget defers
+        // execution to the render pass.
+        let risky_view = View::custom(std::rc::Rc::new(std::cell::RefCell::new(RiskyCounter(count.get()))));
 
         let fallback = View::vstack()
             .child(View::styled_text("CAUGHT PANIC").color(Color::Red).bold().build())
