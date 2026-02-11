@@ -1,7 +1,7 @@
 # telex - tui
 
 <p align="center">
-  <img src="./assets/telex-tui.png" width="200" alt="Logo">
+  <img src="https://raw.githubusercontent.com/telex-tui/telex-tui/main/assets/telex-tui.png" width="200" alt="Logo">
 </p>
 
 A reactive TUI framework for Rust, inspired by React's component model.
