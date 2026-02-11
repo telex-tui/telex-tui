@@ -164,7 +164,7 @@ See `docs/architecture.md` for detailed design rationale covering:
 
 - **`docs/canvas-design.md`** - Pixel-level drawing using Kitty graphics protocol. Supports Kitty, Ghostty, WezTerm. No fallback - use a modern terminal. *(⚠️ Implemented - Experimental)*
 - **`docs/use-effect-design.md`** - Effect API design (`effect!`, `effect_once!` macros) for side effects, timers, cleanup. *(✅ Implemented)*
-- **`docs/internal/terminal-widget-plan.md`** - Interactive PTY terminal emulator design and implementation plan. *(⚠️ Implemented - Experimental)*
+- **Terminal widget** *(example 33)* - Interactive PTY terminal emulator. *(⚠️ Implemented - Experimental)*
 
 ## Known Gaps
 

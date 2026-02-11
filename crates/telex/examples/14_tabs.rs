@@ -116,7 +116,7 @@ impl Component for App {
                                     .child(View::styled_text("About").bold().build())
                                     .child(View::text(""))
                                     .child(View::text("Telex TUI Framework"))
-                                    .child(View::text("Version: 0.1.0"))
+                                    .child(View::text("Version: 0.2.1"))
                                     .child(View::text(""))
                                     .child(
                                         View::styled_text("A React-style TUI framework for Rust")

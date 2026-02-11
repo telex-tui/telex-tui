@@ -19,7 +19,7 @@ fn main() {
             // Provide app config via context (no prop drilling needed!)
             cx.provide_context(AppConfig {
                 app_name: "Telex Demo".to_string(),
-                version: "0.1.0".to_string(),
+                version: "0.2.1".to_string(),
             });
 
             // Theme selection state
