@@ -277,3 +277,42 @@ fn test_checkbox_toggle() {
         output
     );
 }
+
+// ============================================================
+// Slider
+// ============================================================
+
+#[test]
+fn test_slider_right_arrow_increments() {
+    let output = run_headless(
+        |cx: Scope| {
+            let val = state!(cx, || 50.0f64);
+            let v = val.clone();
+            View::vstack()
+                .child(
+                    View::slider()
+                        .min(0.0)
+                        .max(100.0)
+                        .step(1.0)
+                        .value(val.get())
+                        .label("Test")
+                        .on_change(with!(v => move |n: f64| v.set(n)))
+                        .build(),
+                )
+                .child(View::text(format!("VAL={}", val.get() as i32)))
+                .build()
+        },
+        60,
+        10,
+        vec![
+            key(KeyCode::Right),
+            key(KeyCode::Right),
+            key(KeyCode::Right),
+        ],
+    );
+    assert!(
+        output.contains("VAL=53"),
+        "Slider should increment to 53 after 3 Right presses. Got:\n{}",
+        output
+    );
+}

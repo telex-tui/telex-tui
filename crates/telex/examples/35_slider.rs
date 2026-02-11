@@ -44,6 +44,7 @@ impl Component for App {
                     .step(1.0)
                     .value(r.get())
                     .label(&format!("Red:   {:>3}", rv))
+                    .color(Color::Rgb { r: 255, g: 80, b: 80 })
                     .on_change(with!(r => move |v: f64| r.set(v)))
                     .build(),
             )
@@ -54,6 +55,7 @@ impl Component for App {
                     .step(1.0)
                     .value(g.get())
                     .label(&format!("Green: {:>3}", gv))
+                    .color(Color::Rgb { r: 80, g: 255, b: 80 })
                     .on_change(with!(g => move |v: f64| g.set(v)))
                     .build(),
             )
@@ -64,6 +66,7 @@ impl Component for App {
                     .step(1.0)
                     .value(b.get())
                     .label(&format!("Blue:  {:>3}", bv))
+                    .color(Color::Rgb { r: 80, g: 80, b: 255 })
                     .on_change(with!(b => move |v: f64| b.set(v)))
                     .build(),
             )

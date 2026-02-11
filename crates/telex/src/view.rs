@@ -3349,6 +3349,7 @@ pub struct SliderNode {
     pub step: f64,
     pub label: Option<String>,
     pub on_change: Option<SliderCallback>,
+    pub color: Option<crossterm::style::Color>,
 }
 
 /// Builder for slider views.
@@ -3360,6 +3361,7 @@ pub struct SliderBuilder {
     step: f64,
     label: Option<String>,
     on_change: Option<SliderCallback>,
+    color: Option<crossterm::style::Color>,
 }
 
 impl SliderBuilder {
@@ -3371,6 +3373,7 @@ impl SliderBuilder {
             step: 1.0,
             label: None,
             on_change: None,
+            color: None,
         }
     }
 
@@ -3404,6 +3407,11 @@ impl SliderBuilder {
         self
     }
 
+    pub fn color(mut self, color: crossterm::style::Color) -> Self {
+        self.color = Some(color);
+        self
+    }
+
     pub fn build(self) -> View {
         View::Slider(SliderNode {
             min: self.min,
@@ -3412,6 +3420,7 @@ impl SliderBuilder {
             step: self.step,
             label: self.label,
             on_change: self.on_change,
+            color: self.color,
         })
     }
 }

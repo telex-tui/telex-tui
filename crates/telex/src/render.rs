@@ -404,12 +404,10 @@ fn render_slider(buffer: &mut Buffer, node: &SliderNode, area: Rect, ctx: &mut R
     let filled = (ratio * track_width as f64).round() as usize;
     let empty = track_width.saturating_sub(filled);
 
-    // Choose colors
-    let (fg, fill_fg) = if is_focused {
-        (theme.foreground, theme.primary)
-    } else {
-        (theme.foreground, theme.secondary)
-    };
+    // Choose colors — use custom color if set, otherwise theme primary/secondary
+    let default_fill = if is_focused { theme.primary } else { theme.secondary };
+    let fill_fg = node.color.unwrap_or(default_fill);
+    let fg = theme.foreground;
 
     // Write label prefix (bold when focused)
     let label_bold = is_focused;
@@ -428,12 +426,13 @@ fn render_slider(buffer: &mut Buffer, node: &SliderNode, area: Rect, ctx: &mut R
         x += 1;
     }
 
-    // Write filled portion
+    // Write filled portion (━ and ─ are the same box-drawing weight
+    // so the track doesn't visually jump when the fill ratio changes)
     for _ in 0..filled {
         if x >= area.x + area.width {
             break;
         }
-        buffer.set(x, area.y, '=', fill_fg, theme.background);
+        buffer.set(x, area.y, '━', fill_fg, theme.background);
         x += 1;
     }
 
@@ -442,7 +441,7 @@ fn render_slider(buffer: &mut Buffer, node: &SliderNode, area: Rect, ctx: &mut R
         if x >= area.x + area.width {
             break;
         }
-        buffer.set(x, area.y, '-', fg, theme.background);
+        buffer.set(x, area.y, '─', fg, theme.background);
         x += 1;
     }
 

@@ -99,17 +99,26 @@ impl Component for App {
                 if msgs.is_empty() {
                     View::styled_text("(no messages yet — spawn a task!)").dim().build()
                 } else {
+                    let max_visible = 8;
                     let len = msgs.len();
-                    msgs.iter()
-                        .enumerate()
-                        .fold(View::vstack(), |stack, (i, m)| {
-                            stack.child(
-                                View::styled_text(format!("  {} {}", if i == len - 1 { "→" } else { " " }, m))
-                                    .color(if i == len - 1 { Color::Green } else { Color::Reset })
-                                    .build(),
-                            )
-                        })
-                        .build()
+                    let skip = len.saturating_sub(max_visible);
+                    let mut stack = View::vstack();
+                    if skip > 0 {
+                        stack = stack.child(
+                            View::styled_text(format!("  ... {} earlier messages", skip))
+                                .dim()
+                                .build(),
+                        );
+                    }
+                    for (i, m) in msgs.iter().enumerate().skip(skip) {
+                        let is_last = i == len - 1;
+                        stack = stack.child(
+                            View::styled_text(format!("  {} {}", if is_last { "→" } else { " " }, m))
+                                .color(if is_last { Color::Green } else { Color::Reset })
+                                .build(),
+                        );
+                    }
+                    stack.build()
                 }
             })
             .child(View::styled_text("F1 help • Ctrl+Q quit").dim().build())
