@@ -113,7 +113,7 @@ Canvas and Image require a Kitty-compatible terminal (Kitty, Ghostty, WezTerm).
 
 | | |
 |---|---|
-| [**The Telex Book**](docs/book/) | Guide from hello world to real applications |
+| [**The Telex Book**](https://telex-tui.github.io/telex-tui/) | Guide from hello world to real applications |
 | [Examples](docs/examples.md) | All 33 examples with explanations |
 | [Architecture](docs/architecture.md) | Design decisions and trade-offs |
 | `cargo doc -p telex-tui --open` | API reference |

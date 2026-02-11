@@ -7,8 +7,7 @@ description = "A DX-first TUI framework for building AI terminal applications"
 repository = "https://github.com/telex-tui/telex-tui"
 homepage = "https://github.com/telex-tui/telex-tui"
 readme = "../../README.md"
-# documentation URL will be added after book goes live:
-# documentation = "https://telex-tui.github.io/telex-tui/"
+documentation = "https://telex-tui.github.io/telex-tui/"
 keywords = ["tui", "terminal", "ui", "cli", "reactive"]
 categories = ["command-line-interface", "gui"]
 
