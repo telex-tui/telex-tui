@@ -27,8 +27,8 @@ fn main() {
 ## State
 
 ```rust
-// Create state
-let count = cx.use_state(|| 0);
+// Create state (order-independent, safe in conditionals)
+let count = state!(cx, || 0);
 
 // Read
 count.get()
@@ -180,7 +180,7 @@ View::list()
 ## Modal
 
 ```rust
-let show_modal = cx.use_state(|| false);
+let show_modal = state!(cx, || false);
 
 View::modal()
     .visible(show_modal.get())
@@ -230,7 +230,7 @@ KeyCode::Char('q')
 
 ```rust
 // Continuous updates
-let counter = cx.use_stream(|| {
+let counter = stream!(cx, || {
     (0..).map(|i| {
         std::thread::sleep(Duration::from_secs(1));
         i
@@ -239,7 +239,7 @@ let counter = cx.use_stream(|| {
 let value = counter.get();
 
 // Text accumulation (like streaming LLM output)
-let output = cx.use_text_stream(|| {
+let output = text_stream!(cx, || {
     words.into_iter().map(|word| {
         std::thread::sleep(Duration::from_millis(100));
         format!("{} ", word)
@@ -254,7 +254,7 @@ let is_loading = output.is_loading();
 ## Async Data
 
 ```rust
-let data = cx.use_async(|| {
+let data = async_data!(cx, || {
     std::thread::sleep(Duration::from_secs(2));
     Ok(fetch_data())  // or Err("message".to_string())
 });
@@ -297,6 +297,136 @@ let config = cx.use_context::<MyConfig>();
 if let Some(cfg) = config {
     // use cfg
 }
+```
+
+---
+
+## Channels (external events)
+
+```rust
+// Receive messages from external threads
+let ch = channel!(cx, String);
+
+effect_once!(cx, {
+    let tx = ch.tx();
+    move || {
+        std::thread::spawn(move || {
+            tx.send("hello from thread".to_string()).ok();
+        });
+        || {}
+    }
+});
+
+// Read this frame's messages
+for msg in ch.get() {
+    // handle msg
+}
+```
+
+---
+
+## Ports (bidirectional)
+
+```rust
+// Bidirectional communication with external thread
+let io = port!(cx, InMsg, OutMsg);
+
+effect_once!(cx, {
+    let tx_in = io.rx.tx();
+    let rx_out = io.take_outbound_rx();
+    move || {
+        std::thread::spawn(move || {
+            if let Some(rx) = rx_out {
+                for msg in rx { /* handle outbound */ }
+            }
+        });
+        || {}
+    }
+});
+
+// Read inbound
+for msg in io.rx.get() { /* ... */ }
+
+// Send outbound
+io.tx().send(OutMsg::Command("go".into())).ok();
+```
+
+---
+
+## Interval (periodic timer)
+
+```rust
+let ticks = state!(cx, || 0u64);
+
+interval!(cx, Duration::from_secs(1), with!(ticks => move || {
+    ticks.update(|n| *n += 1);
+}));
+```
+
+---
+
+## Reducer (state machine)
+
+```rust
+let (state, dispatch) = reducer!(cx, AppState::Idle, |state, action| {
+    match (state, action) {
+        (_, Action::Reset) => AppState::Idle,
+        (AppState::Idle, Action::Start) => AppState::Running,
+        (s, _) => s,
+    }
+});
+
+// Dispatch actions from callbacks
+dispatch(Action::Start);
+```
+
+---
+
+## Slider
+
+```rust
+let volume = state!(cx, || 50.0);
+
+View::slider()
+    .min(0.0)
+    .max(100.0)
+    .step(1.0)
+    .value(volume.get())
+    .label("Volume")
+    .on_change(with!(volume => move |v: f64| volume.set(v)))
+    .build()
+```
+
+---
+
+## Error Boundary
+
+```rust
+View::error_boundary()
+    .child(risky_view)
+    .fallback(View::text("Something went wrong"))
+    .build()
+```
+
+---
+
+## Custom Widget
+
+```rust
+use telex::widget::Widget;
+use telex::buffer::{Buffer, Rect};
+
+struct MyWidget;
+
+impl Widget for MyWidget {
+    fn render(&self, area: Rect, buf: &mut Buffer) {
+        buf.set(area.x, area.y, '█', Color::Cyan, Color::Black);
+    }
+    fn focusable(&self) -> bool { false }
+    fn height_hint(&self, _width: u16) -> Option<u16> { Some(1) }
+}
+
+View::custom(Rc::new(RefCell::new(MyWidget)))
 ```
 
 ---
@@ -347,6 +477,6 @@ TELEX_DEBUG=1 cargo run -p telex-tui --example 02_counter
 
 ## Links
 
-- [Examples](crates/telex/examples/) - 32 runnable examples
+- [Examples](crates/telex/examples/) - 33 runnable examples
 - [API Docs](https://docs.rs/telex-tui) - Full API reference
 - [Architecture](docs/architecture.md) - Design decisions

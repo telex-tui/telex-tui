@@ -3,7 +3,7 @@
 Load data asynchronously with automatic loading and error state management.
 
 ```rust
-let user = cx.use_async(|| {
+let user = async_data!(cx, || {
     std::thread::sleep(Duration::from_secs(2));
     fetch_user_from_api()
 });
@@ -17,9 +17,9 @@ match &user {
 
 Run with: `cargo run -p telex-tui --example 24_async_data`
 
-## What is use_async?
+## What is async_data!?
 
-`use_async` runs a closure in a background thread and returns an `Async<T>` enum representing the current state:
+`async_data!` runs a closure in a background thread and returns an `Async<T>` enum representing the current state:
 
 ```rust
 pub enum Async<T> {
@@ -34,7 +34,7 @@ This handles the common pattern of showing loading spinners, displaying data whe
 ## Basic usage
 
 ```rust
-let data = cx.use_async(|| {
+let data = async_data!(cx, || {
     // This runs in a background thread
     std::thread::sleep(Duration::from_secs(1));
 
@@ -64,7 +64,7 @@ The closure must return `Result<T, String>` where `T` is your data type.
 Instead of pattern matching, you can use helper methods:
 
 ```rust
-let data = cx.use_async(|| fetch_data());
+let data = async_data!(cx, || fetch_data());
 
 // Check state
 if data.is_loading() {
@@ -86,17 +86,17 @@ if let Some(value) = data.as_ref().ok() {
 Load multiple things in parallel:
 
 ```rust
-let profile = cx.use_async(|| {
+let profile = async_data!(cx, || {
     std::thread::sleep(Duration::from_secs(2));
     Ok(fetch_user_profile())
 });
 
-let stats = cx.use_async(|| {
+let stats = async_data!(cx, || {
     std::thread::sleep(Duration::from_secs(1));
     Ok(fetch_user_stats())
 });
 
-let posts = cx.use_async(|| {
+let posts = async_data!(cx, || {
     std::thread::sleep(Duration::from_secs(3));
     Ok(fetch_user_posts())
 });
@@ -105,14 +105,14 @@ let posts = cx.use_async(|| {
 // They don't wait for each other
 ```
 
-Each `use_async` runs in its own thread. They start simultaneously and complete at different times.
+Each `async_data!` runs in its own thread. They start simultaneously and complete at different times.
 
 ## Error handling
 
 Return `Err` to indicate failure:
 
 ```rust
-let data = cx.use_async(|| {
+let data = async_data!(cx, || {
     match fetch_from_api() {
         Ok(data) => Ok(data),
         Err(e) => Err(format!("API error: {}", e)),
@@ -171,7 +171,7 @@ View::text(format!("Status: {}", status))
 Real-world HTTP example:
 
 ```rust
-let user_data = cx.use_async(|| {
+let user_data = async_data!(cx, || {
     // Using reqwest or similar
     match reqwest::blocking::get("https://api.example.com/user/123") {
         Ok(response) => match response.json::<User>() {
@@ -188,7 +188,7 @@ let user_data = cx.use_async(|| {
 Loading from a database:
 
 ```rust
-let records = cx.use_async(|| {
+let records = async_data!(cx, || {
     match db::fetch_all_records() {
         Ok(data) => Ok(data),
         Err(e) => Err(format!("Database error: {}", e)),
@@ -207,7 +207,7 @@ match &records {
 Loading configuration files:
 
 ```rust
-let config = cx.use_async(|| {
+let config = async_data!(cx, || {
     match std::fs::read_to_string("config.json") {
         Ok(contents) => match serde_json::from_str(&contents) {
             Ok(cfg) => Ok(cfg),
@@ -227,7 +227,7 @@ let user_id = state!(cx, || None);
 let user_profile = state!(cx, || Async::Loading);
 
 // Load user list
-let users = cx.use_async(|| Ok(fetch_users()));
+let users = async_data!(cx, || Ok(fetch_users()));
 
 // When a user is selected, load their profile
 effect!(cx, user_id.get(), with!(user_profile => move |id| {
@@ -249,7 +249,7 @@ To reload, you need to trigger a re-creation of the async task:
 ```rust
 let refresh_key = state!(cx, || 0);
 
-let data = cx.use_async({
+let data = async_data!(cx, {
     let key = refresh_key.get();
     move || {
         let _ = key;  // capture key to make closure depend on it
@@ -266,18 +266,18 @@ View::button()
     .build()
 ```
 
-Changing the closure's captured values causes `use_async` to restart.
+Changing the closure's captured values causes `async_data!` to restart.
 
 **Note:** This pattern is a workaround - the dummy `refresh_key` is captured just to force the async task to re-run. A more ergonomic API for refreshing async data is planned for a future version.
 
 ## Async vs Streams
 
-**Use use_async when:**
+**Use async_data! when:**
 - One-time data fetch (API call, database query, file load)
 - Clear start and end (loading → ready/error)
 - User-triggered or component mount triggered
 
-**Use use_stream when:**
+**Use stream! when:**
 - Continuous data updates (polling, tailing, monitoring)
 - No clear "done" state
 - Data keeps flowing over time
@@ -286,19 +286,19 @@ See [Streams](./streams.md) for continuous data.
 
 ## Performance tips
 
-**Parallel is automatic** - Multiple `use_async` calls run in parallel without extra work.
+**Parallel is automatic** - Multiple `async_data!` calls run in parallel without extra work.
 
 **Blocking is fine** - Async tasks run in background threads, so blocking operations (network, disk, sleep) don't freeze the UI.
 
 **Cancellation is automatic** - If the component unmounts, background threads are cleaned up.
 
-**Don't overuse** - Each `use_async` is a thread. Dozens is fine, hundreds is excessive.
+**Don't overuse** - Each `async_data!` is a thread. Dozens is fine, hundreds is excessive.
 
 ## Common patterns
 
 **API with timeout:**
 ```rust
-let data = cx.use_async(|| {
+let data = async_data!(cx, || {
     let handle = std::thread::spawn(|| fetch_from_api());
 
     match handle.join_timeout(Duration::from_secs(10)) {
@@ -311,7 +311,7 @@ let data = cx.use_async(|| {
 
 **Retry logic:**
 ```rust
-let data = cx.use_async(|| {
+let data = async_data!(cx, || {
     for attempt in 1..=3 {
         match fetch_data() {
             Ok(data) => return Ok(data),
@@ -346,6 +346,6 @@ match &data {
 
 **Clone for rendering** - `Async<T>` derefs to `&T` when Ready, but pattern matching gives you references. Clone if needed for rendering.
 
-**Async data is not reactive** - Unlike `use_state`, modifying the value inside `Async::Ready` doesn't trigger re-renders. Async tasks run once.
+**Async data is not reactive** - Unlike `state!`, modifying the value inside `Async::Ready` doesn't trigger re-renders. Async tasks run once.
 
 Next: [Tables](../widgets/tables.md)

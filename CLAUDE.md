@@ -14,10 +14,12 @@ crates/
       render.rs    # View tree -> buffer rendering
       focus.rs     # Tab navigation, focus management, modal containment
       state.rs     # State<T> with Rc<RefCell<T>>
-      scope.rs     # Hook storage (indexed and keyed state)
+      scope.rs     # Hook storage (keyed state, channels, intervals)
+      channel.rs   # Channel/port primitives for external events
+      widget.rs    # Custom widget trait (escape hatch)
       text.rs      # Grapheme-aware text wrapping utilities
-    examples/      # Numbered examples (01-32)
-  telex-macro/     # view!, state!, effect!, effect_once!, with! proc macros
+    examples/      # Numbered examples (01-33)
+  telex-macro/     # view!, state!, effect!, effect_once!, with!, channel!, port!, interval!, reducer!, stream!, async_data!, terminal!, text_stream! proc macros
 examples/
   chat/            # AI chat app (multi-provider: Anthropic, OpenAI, Gemini, Ollama)
   layout-playground/  # Interactive layout experimentation
@@ -41,16 +43,27 @@ docs/              # Architecture documentation
 3. **State via macros (preferred):**
    - `state!(cx, || init)` - Keyed by code location, order-independent, safe in conditionals
    - `cx.use_state_keyed::<Key, _>(|| init)` - Explicit key for shared state across call sites
-   - `cx.use_state(|| init)` - Legacy index-based (React-style), must maintain call order
 
 4. **Effects via macros (preferred):**
    - `effect!(cx, deps, |&d| { ... || {} })` - Runs when deps change, order-independent
    - `effect_once!(cx, || { ... || {} })` - Runs once on first render, order-independent
-   - Legacy `cx.use_effect_*` APIs exist but are index-based
 
-5. **Callbacks as Rc<dyn Fn()>** - Cloneable function pointers for event handlers.
+5. **External events:**
+   - `channel!(cx, T)` - Typed inbound channel; returns `ChannelHandle<T>` with `tx()` (waking sender) and `get()` (this frame's messages)
+   - `port!(cx, In, Out)` - Bidirectional port; inbound `ChannelHandle<In>` + outbound `Sender<Out>`
+   - `interval!(cx, Duration, || callback)` - Periodic timer; callback runs on main thread each frame the timer fires
+   - All channel senders use `WakingSender` which wakes the event loop for near-zero latency
 
-6. **Focus management** - Modal focus containment, initial focus support, cursor navigation.
+6. **Reducer pattern:**
+   - `reducer!(cx, initial, |state, action| { ... })` - Returns `(State<S>, Rc<dyn Fn(A)>)` dispatch pair
+
+7. **Callbacks as Rc<dyn Fn()>** - Cloneable function pointers for event handlers.
+
+8. **Focus management** - Modal focus containment, initial focus support, cursor navigation.
+
+9. **Error boundaries** - `View::error_boundary().child(risky).fallback(safe).build()` catches panics in child views.
+
+10. **Custom widgets** - `View::custom(widget)` escape hatch for user-defined character-cell rendering via the `Widget` trait.
 
 ## Unicode/Grapheme Handling
 
@@ -137,20 +150,27 @@ See `docs/architecture.md` for detailed design rationale covering:
 - The `effect_once!` macro runs once: `effect_once!(cx, || { ... || {} })`
 - The `with!` macro captures state for callbacks: `with!(count => move || count.update(|n| *n += 1))`
 - All state mutation goes through `State::update()` or `State::set()`
-- Single-threaded (Rc, not Arc) - TUI apps don't need threads
+- Single-threaded render (Rc, not Arc) - external threads communicate via channels/ports
+- The `channel!`, `port!`, `interval!`, `stream!`, `async_data!`, `text_stream!`, `terminal!`, `reducer!` macros all generate unique keys (order-independent, safe in conditionals)
 
-## New in This Version
+## New in This Version (API 0.2)
 
-- **Keyed state** - `state!` macro for order-independent state (examples 27, 28)
-- **Keyed effects** - `effect!` and `effect_once!` macros for order-independent effects (example 32)
+- **Index-based hooks removed** - All hooks are now keyed via macros (`state!`, `effect!`, `channel!`, etc.). No more call-order dependency.
+- **Channels & ports** - `channel!(cx, T)` and `port!(cx, In, Out)` for external event sources with frame-buffered message delivery
+- **WakingSender** - Channel senders wake the event loop instantly (near-zero latency vs 16ms polling)
+- **Error boundaries** - `View::error_boundary()` catches panics in child views and renders a fallback
+- **Reducer** - `reducer!(cx, initial, |s, a| ...)` for action-dispatched state management
+- **Custom widgets** - `View::custom(widget)` with the `Widget` trait for escape-hatch character-cell rendering
+- **Slider widget** - `View::slider()` for bounded numeric values with left/right arrow key input
+- **Interval timer** - `interval!(cx, duration, || callback)` sugar over channel + timer thread
+- **Dirty render skip** - Run loop skips frames when nothing changed (no input, no channel data, no effects)
+- **Component identity** - `Scope` carries an optional `TypeId` for future memoization support
 - **Effect cycle detection** - Automatic detection of infinite loops in effects
 - **Modal focus containment** - Focus stays within visible modals, restores when closed
-- **Initial focus** - TextInput supports `focused: true` for initial focus
 - **Cursor navigation** - TextInput left/right, TextArea up/down/left/right with `on_cursor_change`
 - **`with!` macro** - Cleaner callback state capture
 - **Menu bar improvements** - Full keyboard navigation (Tab, Enter, arrows, Escape)
 - **Focus visibility** - Focus indicators hidden until user starts keyboard navigation (`focus_visible` flag)
-- **Overlay rendering** - Menu dropdowns render above content (z-order fix)
 
 ## Experimental Features
 
@@ -168,10 +188,8 @@ See `docs/architecture.md` for detailed design rationale covering:
 
 ## Known Gaps
 
-From external review - documented issues to address:
-
 1. ~~**No `use_effect`**~~ - ✅ Implemented! See example 32_effects
-2. **No escape hatch** - Can't do custom character-cell rendering (Canvas covers pixel graphics)
-3. **No panic boundaries** - Callback panic crashes app
+2. ~~**No escape hatch**~~ - ✅ Implemented! `View::custom(widget)` with the `Widget` trait
+3. ~~**No panic boundaries**~~ - ✅ Implemented! `View::error_boundary()` catches panics
 4. **Minimal devtools** - `TELEX_DEBUG=1` shows focus only, no state inspection
 5. **No type-safe required props** - Builders don't enforce required fields at compile time

@@ -9,7 +9,7 @@ You might have a render loop - state being updated during render.
 ```rust
 // WRONG - causes infinite loop
 fn render(&self, cx: Scope) -> View {
-    let count = cx.use_state(|| 0);
+    let count = state!(cx, || 0);
     count.update(|n| *n += 1);  // triggers re-render, which triggers update...
     View::text(format!("{}", count.get()))
 }
@@ -31,23 +31,17 @@ View::text(format!("{}", count.get()))
 
 ## "Hooks called in different order"
 
-`use_state` hooks must be called in the same order every render.
+If you're using `use_state_keyed` with explicit keys, this won't happen. The `state!` macro handles ordering automatically — each call site gets a unique key based on its location in the source code.
 
 ```rust
-// WRONG - hook order changes based on condition
+// SAFE: state! is order-independent
 if show_extra {
-    let extra = cx.use_state(|| "");  // sometimes called, sometimes not
+    let extra = state!(cx, || "");  // fine in conditionals
 }
-let main = cx.use_state(|| 0);  // index shifts!
+let main = state!(cx, || 0);  // always works
 ```
 
-**Fix:** Use `state!` macro for conditional state:
-
-```rust
-if show_extra {
-    let extra = state!(cx, || "");  // order-independent
-}
-```
+If you need shared state across call sites, use `cx.use_state_keyed::<Key, _>(|| init)` with an explicit key type.
 
 ## "Effect runs too often"
 
@@ -66,7 +60,7 @@ If you're modifying data without going through `State::update()` or `State::set(
 
 ```rust
 // WRONG - modifies state but doesn't trigger re-render
-let items = cx.use_state(|| vec![1, 2, 3]);
+let items = state!(cx, || vec![1, 2, 3]);
 items.get().push(4);  // UI won't update!
 
 // RIGHT - use .update() to modify
@@ -80,14 +74,14 @@ Streams capture their initial context. If you need fresh state values inside a s
 ```rust
 // WRONG - max captured once, won't update
 let max = max_value.get();
-let stream = cx.use_stream(|| {
+let stream = stream!(cx, || {
     (0..).map(move |i| {
         i % max  // uses stale max
     })
 });
 
 // RIGHT - recalculate inside the stream
-let stream = cx.use_stream(|| {
+let stream = stream!(cx, || {
     (0..).map(|i| {
         let current_max = get_current_max();  // get fresh value
         i % current_max

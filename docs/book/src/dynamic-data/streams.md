@@ -3,7 +3,7 @@
 Background data sources that update the UI automatically over time.
 
 ```rust
-let counter = cx.use_stream(|| {
+let counter = stream!(cx, || {
     (0..).map(|i| {
         std::thread::sleep(Duration::from_secs(1));
         i
@@ -46,10 +46,10 @@ See [Overview](./overview.md) for more guidance on choosing the right approach.
 
 ## Creating a stream
 
-Use `cx.use_stream()` with a closure that returns an iterator:
+Use the `stream!` macro with a closure that returns an iterator:
 
 ```rust
-let elapsed = cx.use_stream(|| {
+let elapsed = stream!(cx, || {
     (0u64..).map(|s| {
         std::thread::sleep(Duration::from_secs(1));
         s
@@ -91,21 +91,21 @@ A stream is "loading" while it's producing values. Once the iterator ends or the
 You can create multiple independent streams:
 
 ```rust
-let cpu = cx.use_stream(|| {
+let cpu = stream!(cx, || {
     (0..).map(|_| {
         std::thread::sleep(Duration::from_millis(500));
         get_cpu_usage()
     })
 });
 
-let memory = cx.use_stream(|| {
+let memory = stream!(cx, || {
     (0..).map(|_| {
         std::thread::sleep(Duration::from_millis(800));
         get_memory_usage()
     })
 });
 
-let network = cx.use_stream(|| {
+let network = stream!(cx, || {
     (0..).map(|_| {
         std::thread::sleep(Duration::from_millis(300));
         get_network_traffic()
@@ -119,7 +119,7 @@ Each stream runs independently in its own thread. They update at different rates
 
 ## Stream lifecycle
 
-**Creation:** The stream starts when the component first renders and calls `use_stream()`.
+**Creation:** The stream starts when the component first renders and calls `stream!`.
 
 **Updates:** Each yielded value triggers a re-render. The UI shows the latest value.
 
@@ -132,7 +132,7 @@ You don't manually start, stop, or manage stream threads.
 **Infinite streams** run until the component unmounts:
 
 ```rust
-let timer = cx.use_stream(|| {
+let timer = stream!(cx, || {
     (0..).map(|i| {  // infinite iterator
         std::thread::sleep(Duration::from_secs(1));
         i
@@ -143,7 +143,7 @@ let timer = cx.use_stream(|| {
 **Finite streams** stop after producing all values:
 
 ```rust
-let countdown = cx.use_stream(|| {
+let countdown = stream!(cx, || {
     (0..=10).rev().map(|i| {  // 10, 9, 8, ..., 0
         std::thread::sleep(Duration::from_secs(1));
         i
@@ -180,7 +180,7 @@ Each time `cpu` yields a new value, the color recalculates and the UI updates.
 If your stream can fail, yield `Result` values:
 
 ```rust
-let data = cx.use_stream(|| {
+let data = stream!(cx, || {
     (0..).map(|_| {
         std::thread::sleep(Duration::from_secs(1));
         fetch_data()  // returns Result<T, E>
@@ -198,7 +198,7 @@ match data.get() {
 Combine finite streams with progress bars:
 
 ```rust
-let progress = cx.use_stream(|| {
+let progress = stream!(cx, || {
     (0..=100).map(|i| {
         std::thread::sleep(Duration::from_millis(50));
         i
@@ -223,7 +223,7 @@ View::vstack()
 
 **Log viewer:**
 ```rust
-let logs = cx.use_stream(|| {
+let logs = stream!(cx, || {
     std::fs::File::open("/var/log/app.log")
         .and_then(|file| {
             std::io::BufReader::new(file)
@@ -237,7 +237,7 @@ let logs = cx.use_stream(|| {
 
 **System stats:**
 ```rust
-let stats = cx.use_stream(|| {
+let stats = stream!(cx, || {
     (0..).map(|_| {
         std::thread::sleep(Duration::from_secs(2));
         SystemStats {
@@ -251,7 +251,7 @@ let stats = cx.use_stream(|| {
 
 **Periodic API polling:**
 ```rust
-let api_data = cx.use_stream(|| {
+let api_data = stream!(cx, || {
     (0..).map(|_| {
         std::thread::sleep(Duration::from_secs(30));
         fetch_from_api()
@@ -275,14 +275,16 @@ let api_data = cx.use_stream(|| {
 
 **Finite streams for progress** - If your task has a known endpoint, use a finite iterator and check `is_loading()` to detect completion.
 
-**Channels for external events** - If you need to push data from outside (another thread, a library callback), use a channel in your stream:
+**Channels for external events** - If you need to push data from outside (another thread, a library callback), use the `channel!` macro instead of wrapping a channel in a stream:
 
 ```rust
-let (tx, rx) = std::sync::mpsc::channel();
-// Pass tx to external code
-let stream = cx.use_stream(move || rx.into_iter());
+let ch = channel!(cx, String);
+let tx = ch.tx();  // WakingSender — wakes event loop instantly
+// Pass tx to external code, read with ch.get() in render
 ```
+
+See [Channels & Ports](./channels.md) for full details.
 
 **Don't use streams for user input** - User actions should go through state and callbacks, not streams. Streams are for external data sources.
 
-Next: [Effects](./effects.md)
+Next: [Channels & Ports](./channels.md)

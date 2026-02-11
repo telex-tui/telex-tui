@@ -254,7 +254,7 @@ effect_once!(cx, with!(ticks => move || {
 }));
 ```
 
-Note: For simpler cases, use `use_stream` instead. Effects are better when you need cleanup logic.
+Note: For simpler cases, use `stream!` instead. Effects are better when you need cleanup logic.
 
 ## Multiple effects
 
@@ -331,15 +331,5 @@ effect!(cx, count.get(), |&c| {
 ```
 
 This helps track effect timing and dependencies.
-
-## Legacy API
-
-The index-based APIs still exist for backwards compatibility:
-
-- `cx.use_effect(|| ...)` — runs every render
-- `cx.use_effect_once(|| ...)` — runs once
-- `cx.use_effect_with(deps, |d| ...)` — runs when deps change
-
-These are **order-dependent** and will break if called conditionally. Prefer the macros for new code.
 
 Next: [Async Data](./async.md)

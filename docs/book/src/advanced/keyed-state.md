@@ -14,24 +14,9 @@ Run with: `cargo run -p telex-tui --example 27_keyed_state`
 
 ## The Hook Order Problem
 
-React developers know this rule: **hooks must be called in the same order every render**. Telex's `use_state` has the same restriction:
+React developers know this rule: **hooks must be called in the same order every render**. Index-based state has this restriction — if you call state hooks conditionally, indices shift between renders, causing type mismatches and panics.
 
-```rust
-// ❌ WRONG - This will panic!
-fn render(&self, cx: Scope) -> View {
-    if show_counter {
-        let count = cx.use_state(|| 0);  // Sometimes called, sometimes not
-    }
-    let name = cx.use_state(String::new);  // Index shifts!
-}
-```
-
-Why does this fail? `use_state` uses **index-based storage**:
-- First `use_state` call → index 0
-- Second `use_state` call → index 1
-- Third `use_state` call → index 2
-
-When you conditionally skip a hook, the indices shift on different renders, causing type mismatches and panics.
+Telex solves this with the `state!` macro, which uses **key-based storage** instead of index-based. Each `state!` call gets a unique compile-time key based on its source location, so order never matters.
 
 ## The Solution: state!
 
@@ -74,7 +59,7 @@ enabled.set(false)         // write
 enabled.update(|b| *b = !*b)  // toggle
 ```
 
-The API is identical to `use_state` - only the creation differs.
+The API is identical to `use_state_keyed` - only the creation differs (automatic key vs explicit key).
 
 ## Conditional State
 
@@ -158,19 +143,19 @@ for (i, item) in items.get().iter().enumerate() {
 
 **Important:** This works because each `state!` call is at a unique source location. The loop body is the same location, so all iterations share the same key. For per-item state, see [Shared State](./shared-state.md).
 
-## state! vs use_state
+## state! vs use_state_keyed
 
-**Use `state!` when:**
-- State might be created conditionally
-- You're inside an if/match/loop where hooks might skip
-- You want order-independence for safety
+**Use `state!` for almost everything** — it handles ordering automatically and is safe in conditionals.
 
-**Use `use_state` when:**
-- All state is always created (no conditionals)
-- You prefer explicit index-based ordering
-- Maximum performance (tiny bit faster, no key lookup)
+**Use `cx.use_state_keyed::<Key, _>(|| init)` when:**
+- You need shared state across multiple call sites (same key = same state)
+- You need explicit control over which state slot is used
 
-In practice, **prefer `state!` by default**. The performance difference is negligible, and the safety is worth it.
+```rust
+// Shared state — same key type = same state everywhere
+struct ThemeKey;
+let theme = cx.use_state_keyed::<ThemeKey, _>(|| "dark".to_string());
+```
 
 ## Multiple Conditionals
 
@@ -281,11 +266,7 @@ if condition_b {
 
 ## Performance
 
-`state!` has a tiny overhead compared to `use_state`:
-- Index lookup: O(1) array access
-- Key lookup: O(1) hash map access
-
-The difference is **1-2 nanoseconds per access** - completely negligible in UI code.
+`state!` uses O(1) hash map access for key lookup — completely negligible in UI code.
 
 ## Limitations
 
@@ -298,17 +279,15 @@ for i in 0..5 {
 }
 ```
 
-Each loop iteration is the same source location, so they get the same key. For per-item state, use explicit keys with `use_state_keyed` (see [Shared State](./shared-state.md)).
+Each loop iteration is the same source location, so they get the same key. For per-item state, use explicit keys with `cx.use_state_keyed` (see [Shared State](./shared-state.md)).
 
 ## Tips
 
-**Default to state!** - Unless you have a specific reason to use `use_state`, prefer `state!` for safety.
-
-**Don't mix in same function** - Pick one style per component. Mixing makes it hard to reason about.
+**Default to state!** - Unless you need shared state across call sites, `state!` is the way to go.
 
 **Location matters** - Moving `state!` to a different line creates a new state. Don't refactor carelessly.
 
-**Works with all types** - Any type that works with `use_state` works with `state!`.
+**Works with all types** - Any `Clone + 'static` type works with `state!`.
 
 **Clone is cheap** - `State<T>` is `Rc<RefCell<T>>` under the hood, so cloning the handle is cheap.
 

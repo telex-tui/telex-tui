@@ -21,6 +21,8 @@
 - [Overview](./dynamic-data/overview.md)
 - [Streams](./dynamic-data/streams.md)
 - [Async Data](./dynamic-data/async.md)
+- [Channels & Ports](./dynamic-data/channels.md)
+- [Intervals](./dynamic-data/intervals.md)
 
 # Widgets
 
@@ -30,6 +32,7 @@
 - [Forms](./widgets/forms.md)
 - [Menus](./widgets/menus.md)
 - [Toasts](./widgets/toasts.md)
+- [Slider](./widgets/slider.md)
 
 # Side Effects
 
@@ -48,6 +51,9 @@
 - [Keyed State](./advanced/keyed-state.md)
 - [Shared State](./advanced/shared-state.md)
 - [Context](./advanced/context.md)
+- [Reducer](./advanced/reducer.md)
+- [Error Boundaries](./advanced/error-boundaries.md)
+- [Custom Widgets](./advanced/custom-widgets.md)
 
 # Reference
 

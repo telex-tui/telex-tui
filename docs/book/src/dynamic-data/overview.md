@@ -22,12 +22,23 @@ This section covers three powerful tools for handling dynamic data in your Telex
 - Clear loading → ready/error lifecycle
 - Pattern: Background task with loading state management
 
+**Use [Channels & Ports](./channels.md) when:**
+- External threads need to push data into your component
+- You need bidirectional communication with a background system
+- Examples: WebSocket handlers, hardware I/O, message queues
+- Pattern: Spawn thread with sender, drain messages each frame
+
+**Use [Intervals](./intervals.md) when:**
+- You need periodic callbacks on a fixed schedule
+- Examples: polling, animation ticks, blinking cursor
+- Pattern: Timer fires, callback runs on main thread each frame
+
 ## Common Patterns
 
 ### Timer/Clock Display
 Use **streams** - continuous time updates:
 ```rust
-let elapsed = cx.use_stream(|| {
+let elapsed = stream!(cx, || {
     (0..).map(|s| {
         std::thread::sleep(Duration::from_secs(1));
         s
@@ -47,7 +58,7 @@ effect!(cx, document.get(), |doc| {
 ### Loading User Profile
 Use **async** - one-time fetch with loading state:
 ```rust
-let profile = cx.use_async(|| {
+let profile = async_data!(cx, || {
     fetch_user_from_api()
 });
 
@@ -64,7 +75,7 @@ You can use multiple approaches together:
 
 ```rust
 // Load initial data (async)
-let data = cx.use_async(|| fetch_initial_data());
+let data = async_data!(cx, || fetch_initial_data());
 
 // Save changes (effect)
 effect!(cx, data.clone(), |d| {
@@ -75,7 +86,7 @@ effect!(cx, data.clone(), |d| {
 });
 
 // Show live stats (stream)
-let stats = cx.use_stream(|| {
+let stats = stream!(cx, || {
     (0..).map(|_| {
         std::thread::sleep(Duration::from_secs(5));
         get_stats()
@@ -87,5 +98,7 @@ let stats = cx.use_stream(|| {
 
 Start with the chapter that matches your use case:
 - [Streams →](./streams.md)
-- [Effects →](./effects.md)
+- [Effects →](../experimental/effects.md)
 - [Async Data →](./async.md)
+- [Channels & Ports →](./channels.md)
+- [Intervals →](./intervals.md)

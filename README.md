@@ -68,11 +68,11 @@ fn main() {
 
 ## What's in the box
 
-**State & hooks** — `state!` macro for order-independent reactive state. `effect!` and `effect_once!` for side effects. `use_async` and `use_stream` for background work. All single-threaded — no Arc, no Send bounds.
+**State & hooks** — `state!` macro for order-independent reactive state. `effect!` and `effect_once!` for side effects. `stream!` and `async_data!` for background work. `channel!`/`port!` for external events, `interval!` for timers, `reducer!` for state machines. All single-threaded — no Arc, no Send bounds.
 
 **Layout** — VStack, HStack, Box with flex, min/max constraints, and percentage sizing. Split panes for resizable panels. Tabs, modals, menus.
 
-**Widgets** — Text, TextInput, TextArea, Button, Checkbox, RadioGroup, List, Table, Tree, Tabs, ProgressBar, StatusBar, MenuBar, Modal, Form, Toast, Markdown, Split, and more. Builder pattern or `view!` macro — your choice.
+**Widgets** — Text, TextInput, TextArea, Button, Checkbox, RadioGroup, List, Table, Tree, Tabs, ProgressBar, StatusBar, MenuBar, Modal, Form, Toast, Markdown, Split, Slider, and more. Builder pattern or `view!` macro — your choice.
 
 **Focus management** — Tab navigation, modal focus containment, cursor navigation, initial focus. Focus indicators appear only when the user starts navigating.
 
@@ -80,7 +80,7 @@ fn main() {
 
 **Unicode** — Proper grapheme cluster handling. Emoji, CJK, combining characters all render at correct widths.
 
-**Streaming** — Built-in `use_text_stream` for token-by-token rendering. The kind of thing you need for LLM output.
+**Streaming** — `text_stream!` macro for token-by-token rendering. The kind of thing you need for LLM output. For general-purpose external events, use `channel!`/`port!`.
 
 ---
 
@@ -127,7 +127,7 @@ Canvas and Image require a Kitty-compatible terminal (Kitty, Ghostty, WezTerm).
 telex-tui/
 ├── crates/
 │   ├── telex/           # Core framework + 33 examples
-│   └── telex-macro/     # view!, state!, effect!, with! proc macros
+│   └── telex-macro/     # view!, state!, effect!, effect_once!, with!, stream!, async_data!, text_stream!, terminal!, channel!, port!, interval!, reducer! proc macros
 ├── examples/
 │   ├── chat/            # AI chat app (multi-provider)
 │   ├── layout-playground/

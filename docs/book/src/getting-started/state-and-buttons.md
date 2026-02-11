@@ -120,6 +120,6 @@ let count_clone = count.clone();
 move || count_clone.update(...)
 ```
 
-**Footnote:** There's also `cx.use_state()` - an index-based API similar to React hooks. It works fine but requires calling hooks in the same order every render (no conditionals). `state!()` doesn't have this restriction, so we recommend it for 99% of cases. The 1% edge case where you might want `use_state()`: when you're porting React code and want to maintain the exact same hook order semantics.
+**Footnote:** There's also `cx.use_state_keyed::<Key, _>(|| init)` for when you need shared state across call sites — multiple places in your code that access the same state by using the same key type. For everything else, `state!()` is the way to go.
 
 Next: [Styling](./styling.md)

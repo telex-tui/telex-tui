@@ -90,7 +90,7 @@ View::tabs()
 
 ### Stream
 ```rust
-let data = cx.use_stream(|| {
+let data = stream!(cx, || {
     (0..).map(|i| {
         std::thread::sleep(Duration::from_secs(1));
         i
@@ -117,7 +117,7 @@ effect!(cx, count.get(), |&val| {
 
 ### Async
 ```rust
-let data = cx.use_async(|| {
+let data = async_data!(cx, || {
     fetch_from_api()
 });
 
@@ -126,6 +126,57 @@ match &data {
     Async::Ready(d) => View::text(d),
     Async::Error(e) => View::text(e),
 }
+```
+
+### Channel
+```rust
+let ch = channel!(cx, String);
+// ch.tx() gives WakingSender to pass to threads
+// ch.get() returns this frame's messages
+```
+
+### Port (bidirectional)
+```rust
+let io = port!(cx, InMsg, OutMsg);
+// io.rx.tx() / io.rx.get() for inbound
+// io.tx() / io.take_outbound_rx() for outbound
+```
+
+### Interval
+```rust
+interval!(cx, Duration::from_secs(1), with!(count => move || {
+    count.update(|n| *n += 1);
+}));
+```
+
+### Reducer
+```rust
+let (state, dispatch) = reducer!(cx, initial, |s, a| {
+    match a { /* ... */ }
+});
+```
+
+### Slider
+```rust
+View::slider()
+    .min(0.0).max(100.0).step(1.0)
+    .value(val.get())
+    .label("Volume")
+    .on_change(with!(val => move |v: f64| val.set(v)))
+    .build()
+```
+
+### Error Boundary
+```rust
+View::error_boundary()
+    .child(risky_view)
+    .fallback(View::text("Something went wrong"))
+    .build()
+```
+
+### Custom Widget
+```rust
+View::custom(Rc::new(RefCell::new(my_widget)))
 ```
 
 ## Keyboard Commands

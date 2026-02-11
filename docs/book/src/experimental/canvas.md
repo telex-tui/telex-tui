@@ -127,7 +127,7 @@ Color::Rgb { r: 100, g: 150, b: 200 }
 Combine canvas with streams for animated graphics:
 
 ```rust
-let frame = cx.use_stream(|| {
+let frame = stream!(cx, || {
     (0u32..).map(|i| {
         std::thread::sleep(Duration::from_millis(50));
         i
