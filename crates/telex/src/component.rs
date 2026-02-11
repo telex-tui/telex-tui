@@ -8,7 +8,7 @@ pub trait Component {
 }
 
 /// Blanket implementation for closures that take Scope and return View.
-/// This enables: rte::run(|cx| view! { ... })
+/// This enables: telex::run(|cx| view! { ... })
 impl<F> Component for F
 where
     F: Fn(Scope) -> View,

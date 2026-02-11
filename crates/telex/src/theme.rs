@@ -1,10 +1,10 @@
-//! Theming support for RTE applications.
+//! Theming support for Telex applications.
 //!
 //! Provides customizable color schemes for UI elements.
 //!
 //! # Example
 //! ```rust,ignore
-//! use rte::theme::Theme;
+//! use telex::theme::Theme;
 //!
 //! let theme = Theme::dark();
 //! // or customize:

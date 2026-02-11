@@ -1,4 +1,4 @@
-//! Async state management for RTE.
+//! Async state management for Telex.
 //!
 //! Provides the `Async<T>` enum and `use_async` hook for loading data.
 

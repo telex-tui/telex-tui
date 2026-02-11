@@ -5,7 +5,7 @@
 //!
 //! # Example
 //! ```rust,ignore
-//! use rte::prelude::*;
+//! use telex::prelude::*;
 //!
 //! #[derive(Clone)]
 //! struct AppTheme {

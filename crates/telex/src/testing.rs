@@ -1,11 +1,11 @@
-//! Testing utilities for RTE components.
+//! Testing utilities for Telex components.
 //!
 //! Provides `TestApp` for testing components without a real terminal.
 //!
 //! # Example
 //! ```rust,ignore
-//! use rte::testing::TestApp;
-//! use rte::prelude::*;
+//! use telex::testing::TestApp;
+//! use telex::prelude::*;
 //!
 //! #[test]
 //! fn counter_increments() {
@@ -32,7 +32,7 @@ use crate::scope::{Scope, StateStorage};
 use crate::view::{ButtonNode, CheckboxNode, ListNode, TextInputNode, TextNode, View};
 use std::rc::Rc;
 
-/// A test harness for RTE components.
+/// A test harness for Telex components.
 ///
 /// Renders components to an in-memory buffer and provides methods
 /// for finding elements and simulating interactions.
