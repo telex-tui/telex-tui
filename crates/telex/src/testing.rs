@@ -29,8 +29,14 @@ use crate::component::Component;
 use crate::focus::FocusManager;
 use crate::render::{render_view, RenderContext};
 use crate::scope::{Scope, StateStorage};
+use crate::terminal::Terminal;
 use crate::view::{ButtonNode, CheckboxNode, ListNode, TextInputNode, TextNode, View};
+use crate::EventSource;
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
+use std::cell::RefCell;
+use std::collections::VecDeque;
 use std::rc::Rc;
+use std::time::Duration;
 
 /// A test harness for Telex components.
 ///
@@ -462,4 +468,57 @@ macro_rules! assert_snapshot {
         let rendered = $app.render_to_string();
         println!("Snapshot [{}]:\n{}", $name, rendered);
     };
+}
+
+// =============================================================================
+// TestEventSource - for headless event loop testing
+// =============================================================================
+
+/// A test event source that replays a scripted sequence of events.
+///
+/// Used by `run_headless()` to inject key events into the real event loop.
+/// When all events are consumed, returns Ctrl+Q to exit the loop.
+pub struct TestEventSource {
+    events: RefCell<VecDeque<Event>>,
+    exhausted: RefCell<bool>,
+    last_buffer: RefCell<String>,
+}
+
+impl TestEventSource {
+    /// Create a new test event source with the given events.
+    pub fn new(events: Vec<Event>) -> Self {
+        Self {
+            events: RefCell::new(events.into()),
+            exhausted: RefCell::new(false),
+            last_buffer: RefCell::new(String::new()),
+        }
+    }
+
+    /// Get the last rendered buffer string.
+    pub fn last_buffer(&self) -> String {
+        self.last_buffer.borrow().clone()
+    }
+}
+
+impl EventSource for TestEventSource {
+    fn poll_event(&self, _timeout: Duration) -> std::io::Result<Option<Event>> {
+        let mut events = self.events.borrow_mut();
+        if let Some(event) = events.pop_front() {
+            Ok(Some(event))
+        } else if !*self.exhausted.borrow() {
+            // First time exhausted: send Ctrl+Q to quit
+            *self.exhausted.borrow_mut() = true;
+            Ok(Some(Event::Key(KeyEvent::new(
+                KeyCode::Char('q'),
+                KeyModifiers::CONTROL,
+            ))))
+        } else {
+            // Already sent quit, return None
+            Ok(None)
+        }
+    }
+
+    fn on_frame_rendered(&self, terminal: &Terminal) {
+        *self.last_buffer.borrow_mut() = terminal.buffer_string();
+    }
 }

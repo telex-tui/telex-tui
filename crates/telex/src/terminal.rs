@@ -23,6 +23,7 @@ pub struct Terminal {
     stdout: Stdout,
     buffer: Buffer,
     prev_buffer: Buffer,
+    headless: bool,
 }
 
 impl Terminal {
@@ -41,7 +42,23 @@ impl Terminal {
             stdout,
             buffer,
             prev_buffer,
+            headless: false,
         })
+    }
+
+    /// Create a headless terminal for testing.
+    /// Does not enter raw mode or the alternate screen.
+    pub fn new_headless(width: u16, height: u16) -> Self {
+        let stdout = io::stdout();
+        let buffer = Buffer::new(width, height);
+        let prev_buffer = Buffer::new(width, height);
+
+        Self {
+            stdout,
+            buffer,
+            prev_buffer,
+            headless: true,
+        }
     }
 
     /// Draw a view to the terminal. Returns clamped scroll offsets to apply back to FocusManager.
@@ -54,13 +71,15 @@ impl Terminal {
         cursor_offsets: Vec<usize>,
         modal_visible: bool,
     ) -> io::Result<Vec<(u16, u16)>> {
-        // Check for resize
-        let (width, height) = terminal::size()?;
-        if width != self.buffer.width || height != self.buffer.height {
-            self.buffer = Buffer::new(width, height);
-            self.prev_buffer = Buffer::new(width, height);
-            // Force full redraw after resize
-            execute!(self.stdout, Clear(ClearType::All))?;
+        if !self.headless {
+            // Check for resize
+            let (width, height) = terminal::size()?;
+            if width != self.buffer.width || height != self.buffer.height {
+                self.buffer = Buffer::new(width, height);
+                self.prev_buffer = Buffer::new(width, height);
+                // Force full redraw after resize
+                execute!(self.stdout, Clear(ClearType::All))?;
+            }
         }
 
         // Fill the buffer with the current theme's background color
@@ -76,21 +95,23 @@ impl Terminal {
         // Render overlays (menu dropdowns) after main content
         ctx.render_pending_dropdowns(&mut self.buffer);
 
-        // Get pending canvases and images before finishing with ctx
-        let pending_canvases = ctx.take_pending_canvases();
-        let pending_images = ctx.take_pending_images();
+        if !self.headless {
+            // Get pending canvases and images before finishing with ctx
+            let pending_canvases = ctx.take_pending_canvases();
+            let pending_images = ctx.take_pending_images();
 
-        // Compute diff and write changes (Pass 1: character buffer)
-        self.flush_diff()?;
+            // Compute diff and write changes (Pass 1: character buffer)
+            self.flush_diff()?;
 
-        // Pass 2: Render canvas graphics via Kitty protocol
-        if !pending_canvases.is_empty() {
-            self.flush_canvases(&pending_canvases)?;
-        }
+            // Pass 2: Render canvas graphics via Kitty protocol
+            if !pending_canvases.is_empty() {
+                self.flush_canvases(&pending_canvases)?;
+            }
 
-        // Pass 3: Render images via Kitty protocol
-        if !pending_images.is_empty() {
-            self.flush_images(&pending_images)?;
+            // Pass 3: Render images via Kitty protocol
+            if !pending_images.is_empty() {
+                self.flush_images(&pending_images)?;
+            }
         }
 
         // Swap buffers
@@ -103,6 +124,17 @@ impl Terminal {
     /// Get the terminal height (useful for page up/down calculations).
     pub fn height(&self) -> u16 {
         self.buffer.height
+    }
+
+    /// Get the terminal width.
+    pub fn width(&self) -> u16 {
+        self.buffer.width
+    }
+
+    /// Get the last rendered frame as a string (headless mode).
+    /// The prev_buffer holds the last drawn frame (after swap in draw()).
+    pub fn buffer_string(&self) -> String {
+        self.prev_buffer.to_string()
     }
 
     /// Flush only the changed cells to the terminal.
@@ -221,6 +253,10 @@ impl Terminal {
 
     /// Clean up the terminal state.
     pub fn cleanup(&mut self) -> io::Result<()> {
+        if self.headless {
+            return Ok(());
+        }
+
         // Delete any Kitty graphics images
         if supports_kitty_graphics() {
             let delete_cmd = crate::canvas::delete_all_kitty_images();
@@ -242,6 +278,10 @@ impl Terminal {
 
 impl Drop for Terminal {
     fn drop(&mut self) {
+        if self.headless {
+            return;
+        }
+
         // Best-effort cleanup on drop
         // Delete any Kitty graphics images
         if supports_kitty_graphics() {

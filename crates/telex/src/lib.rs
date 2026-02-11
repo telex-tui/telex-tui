@@ -151,12 +151,39 @@ use command::CommandRegistry;
 use context::ContextStorage;
 use focus::FocusManager;
 use scope::StateStorage;
-use std::io::Result;
+use std::io::{self, Result};
 use std::panic;
 use std::rc::Rc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 use theme::Theme;
+
+/// Trait for providing input events to the run loop.
+///
+/// The default implementation (`CrosstermEventSource`) uses crossterm's real
+/// terminal. Tests can provide a mock implementation via `run_headless()`.
+pub trait EventSource {
+    /// Poll for an event with the given timeout.
+    /// Returns `Ok(Some(event))` if an event is available, `Ok(None)` on timeout.
+    fn poll_event(&self, timeout: Duration) -> io::Result<Option<Event>>;
+
+    /// Called after each frame is rendered. Default is a no-op.
+    /// The test event source uses this to capture the rendered buffer.
+    fn on_frame_rendered(&self, _terminal: &Terminal) {}
+}
+
+/// Event source that reads from the real terminal via crossterm.
+struct CrosstermEventSource;
+
+impl EventSource for CrosstermEventSource {
+    fn poll_event(&self, timeout: Duration) -> io::Result<Option<Event>> {
+        if crossterm::event::poll(timeout)? {
+            Ok(Some(crossterm::event::read()?))
+        } else {
+            Ok(None)
+        }
+    }
+}
 
 /// Check if any modal is visible in the view tree.
 fn has_visible_modal(view: &View) -> bool {
@@ -375,7 +402,36 @@ pub fn run<C: Component>(root: C) -> Result<()> {
         default_hook(panic_info);
     }));
 
-    let mut terminal = Terminal::new()?;
+    let terminal = Terminal::new()?;
+    let event_source = CrosstermEventSource;
+    run_inner(root, terminal, &event_source)
+}
+
+/// Run a component headlessly with scripted events. For testing only.
+///
+/// Runs the real event loop with a headless terminal and injected events.
+/// When all events are consumed, the loop exits and returns the final
+/// rendered frame as a string.
+///
+/// This exercises the same key dispatch logic as the real `run()` function.
+pub fn run_headless<C: Component>(
+    root: C,
+    width: u16,
+    height: u16,
+    events: Vec<Event>,
+) -> String {
+    let terminal = Terminal::new_headless(width, height);
+    let event_source = testing::TestEventSource::new(events);
+    let _ = run_inner(root, terminal, &event_source);
+    event_source.last_buffer()
+}
+
+/// Inner event loop shared by `run()` and `run_headless()`.
+fn run_inner<C: Component, E: EventSource>(
+    root: C,
+    mut terminal: Terminal,
+    event_source: &E,
+) -> Result<()> {
     let mut focus = FocusManager::new();
     let storage = Rc::new(StateStorage::new());
     let commands = Rc::new(CommandRegistry::new());
@@ -414,15 +470,18 @@ pub fn run<C: Component>(root: C) -> Result<()> {
             Duration::from_millis(16)
         };
 
-        // Skip render if nothing changed since last frame
+        // Skip render if nothing changed since last frame.
+        // If input arrives during the skip-render poll, save it so we can
+        // dispatch it after re-rendering (instead of dropping it on the floor).
+        let mut pending_event: Option<Event> = None;
         if !needs_render {
-            // Still need to handle input even when skipping render
-            if let Some(event) = terminal.poll_event(poll_timeout)? {
+            if let Some(event) = event_source.poll_event(poll_timeout)? {
                 if let Event::Resize(_, _) = event {
                     needs_render = true;
                     continue;
                 }
-                // Input arrived — fall through to the full render + input handling below
+                // Input arrived — save it and fall through to render + dispatch
+                pending_event = Some(event);
             } else {
                 continue; // No input, no channel data, skip frame
             }
@@ -447,9 +506,7 @@ pub fn run<C: Component>(root: C) -> Result<()> {
 
         // Set default wrap width for text areas based on terminal width
         // (subtract 2 for TextArea borders)
-        if let Ok((term_width, _)) = crossterm::terminal::size() {
-            focus.set_default_textarea_wrap_width(term_width.saturating_sub(2));
-        }
+        focus.set_default_textarea_wrap_width(terminal.width().saturating_sub(2));
 
         let render_time = render_start.elapsed();
         frame_count += 1;
@@ -518,13 +575,21 @@ pub fn run<C: Component>(root: C) -> Result<()> {
             // Don't flush effects again - just one re-render per frame
         }
 
+        // Store current buffer for test retrieval (headless mode)
+        event_source.on_frame_rendered(&terminal);
+
         // For now, use a generous max_scroll to allow scrolling
         // TODO: Calculate actual content height for focused scrollable
         let max_scroll = 100u16;
         let viewport_height = terminal.height().saturating_sub(6); // Approximate visible rows
 
-        // Handle input
-        if let Some(event) = terminal.poll_event(Duration::from_millis(16))? {
+        // Handle input — use saved event from skip-render poll, or poll fresh
+        let input_event = if pending_event.is_some() {
+            pending_event.take()
+        } else {
+            event_source.poll_event(Duration::from_millis(16))?
+        };
+        if let Some(event) = input_event {
             // Any input means we should re-render next frame
             needs_render = true;
 
