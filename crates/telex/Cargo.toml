@@ -15,7 +15,7 @@ categories = ["command-line-interface", "gui"]
 name = "telex"
 
 [dependencies]
-telex-macro = { version = "0.2.1", path = "../telex-macro" }
+telex-macro = { version = "0.3.0", path = "../telex-macro" }
 base64 = "0.22"
 crossterm = "0.28"
 pulldown-cmark = "0.10"
