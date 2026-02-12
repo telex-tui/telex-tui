@@ -66,6 +66,13 @@ fn main() {
                 selected.update(|s| *s = (*s + 1) % item_count);
             }
 
+            // F1 help modal
+            let show_help = state!(cx, || false);
+            cx.use_command(
+                KeyBinding::key(telex::KeyCode::F(1)),
+                with!(show_help => move || show_help.update(|v| *v = !*v)),
+            );
+
             // Key handlers
             let power_up = item_power.clone();
             cx.use_command(KeyBinding::key(telex::KeyCode::Right), move || {
@@ -138,8 +145,45 @@ fn main() {
                 )
                 .build();
 
-            // Controls help
-            let help = View::text("←/→: items (10^n)  ↑/↓: scroll  PgUp/PgDn: fast scroll  s: stress mode  Ctrl+Q: quit");
+            // Controls footer
+            let help = View::status_bar()
+                .left("F1: help  s: stress  ←/→: items  ↑/↓: scroll  Ctrl+Q: quit")
+                .build();
+
+            // F1 help modal
+            let help_modal = View::modal()
+                .visible(show_help.get())
+                .title("Performance Test")
+                .on_dismiss(with!(show_help => move || show_help.set(false)))
+                .child(
+                    View::vstack()
+                        .child(View::styled_text("What is this?").bold().build())
+                        .child(View::text("A stress test for the Telex rendering pipeline."))
+                        .child(View::text("Measures how fast the framework can render"))
+                        .child(View::text("large lists and update the screen."))
+                        .child(View::gap(1))
+                        .child(View::styled_text("Controls").bold().build())
+                        .child(View::text("  ←/→        Change item count (10^n)"))
+                        .child(View::text("  ↑/↓        Scroll through list"))
+                        .child(View::text("  PgUp/PgDn  Jump 100 items"))
+                        .child(View::text("  s           Toggle stress mode"))
+                        .child(View::text("  Ctrl+Q      Quit"))
+                        .child(View::gap(1))
+                        .child(View::styled_text("Stats bar").bold().build())
+                        .child(View::text("  FPS         Frames per second (green=good)"))
+                        .child(View::text("  Frame       Average ms per frame"))
+                        .child(View::text("  Items       Current list size"))
+                        .child(View::text("  Selected    Currently highlighted row"))
+                        .child(View::gap(1))
+                        .child(View::styled_text("Stress mode").bold().build())
+                        .child(View::text("Auto-scrolls the list every frame, forcing"))
+                        .child(View::text("continuous re-renders. Shows worst-case FPS."))
+                        .child(View::text("Metrics are logged to perf-test.log."))
+                        .child(View::gap(1))
+                        .child(View::styled_text("Press Escape to close").dim().build())
+                        .build(),
+                )
+                .build();
 
             // Main list
             let sel_clone = selected.clone();
@@ -172,15 +216,12 @@ fn main() {
                     View::boxed()
                         .border(true)
                         .flex(1)
+                        .min_height(3)
                         .child(list)
                         .build(),
                 )
-                .child(
-                    View::boxed()
-                        .border(true)
-                        .child(help)
-                        .build(),
-                )
+                .child(help)
+                .child(help_modal)
                 .build()
         },
         telex::theme::Theme::nord(),
