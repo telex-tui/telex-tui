@@ -152,7 +152,7 @@ impl StateStorage {
                 .expect("Stream type mismatch for keyed stream state")
                 .clone()
         } else {
-            let handle = StreamHandle::new();
+            let handle = StreamHandle::with_wake_flag(Arc::clone(&self.wake_flag));
             keyed_states.insert(key, Rc::new(handle.clone()));
             handle
         };
@@ -195,7 +195,7 @@ impl StateStorage {
                 .expect("TextStream type mismatch for keyed text stream state")
                 .clone()
         } else {
-            let handle = TextStreamHandle::new();
+            let handle = TextStreamHandle::with_wake_flag(Arc::clone(&self.wake_flag));
             keyed_states.insert(key, Rc::new(handle.clone()));
             handle
         };

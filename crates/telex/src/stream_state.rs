@@ -4,7 +4,9 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::Arc;
 use std::thread;
 
 /// Represents the state of a streaming operation.
@@ -34,6 +36,8 @@ struct StreamInner<T> {
     started: bool,
     /// Receiver for stream items.
     receiver: Option<Receiver<StreamItem<T>>>,
+    /// Wake flag to notify the event loop when tokens arrive.
+    wake_flag: Option<Arc<AtomicBool>>,
 }
 
 /// An item received from the stream.
@@ -66,6 +70,20 @@ impl<T: Clone + Default + 'static> StreamHandle<T> {
                 state: StreamState::Idle,
                 started: false,
                 receiver: None,
+                wake_flag: None,
+            })),
+        }
+    }
+
+    /// Create a new stream handle with an event-loop wake flag.
+    pub fn with_wake_flag(wake_flag: Arc<AtomicBool>) -> Self {
+        Self {
+            inner: Rc::new(RefCell::new(StreamInner {
+                accumulated: T::default(),
+                state: StreamState::Idle,
+                started: false,
+                receiver: None,
+                wake_flag: Some(wake_flag),
             })),
         }
     }
@@ -78,6 +96,7 @@ impl<T: Clone + Default + 'static> StreamHandle<T> {
                 state: StreamState::Idle,
                 started: false,
                 receiver: None,
+                wake_flag: None,
             })),
         }
     }
@@ -145,6 +164,7 @@ impl<T: Clone + Send + 'static> StreamHandle<T> {
         // Create channel for stream items
         let (tx, rx): (Sender<StreamItem<T>>, Receiver<StreamItem<T>>) = mpsc::channel();
         inner.receiver = Some(rx);
+        let wake_flag = inner.wake_flag.clone();
 
         // Spawn thread to run the stream
         thread::spawn(move || {
@@ -154,8 +174,14 @@ impl<T: Clone + Send + 'static> StreamHandle<T> {
                     // Receiver dropped, stop streaming
                     return;
                 }
+                if let Some(ref flag) = wake_flag {
+                    flag.store(true, Ordering::Release);
+                }
             }
             let _ = tx.send(StreamItem::Done);
+            if let Some(ref flag) = wake_flag {
+                flag.store(true, Ordering::Release);
+            }
         });
     }
 
@@ -175,6 +201,7 @@ impl<T: Clone + Send + 'static> StreamHandle<T> {
 
         let (tx, rx): (Sender<StreamItem<T>>, Receiver<StreamItem<T>>) = mpsc::channel();
         inner.receiver = Some(rx);
+        let wake_flag = inner.wake_flag.clone();
 
         thread::spawn(move || match stream_fn() {
             Ok(iter) => {
@@ -182,11 +209,20 @@ impl<T: Clone + Send + 'static> StreamHandle<T> {
                     if tx.send(StreamItem::Value(item)).is_err() {
                         return;
                     }
+                    if let Some(ref flag) = wake_flag {
+                        flag.store(true, Ordering::Release);
+                    }
                 }
                 let _ = tx.send(StreamItem::Done);
+                if let Some(ref flag) = wake_flag {
+                    flag.store(true, Ordering::Release);
+                }
             }
             Err(e) => {
                 let _ = tx.send(StreamItem::Error(e));
+                if let Some(ref flag) = wake_flag {
+                    flag.store(true, Ordering::Release);
+                }
             }
         });
     }
@@ -252,6 +288,7 @@ impl<T: Clone + Send + 'static> StreamHandle<T> {
         inner.state = StreamState::Idle;
         inner.started = false;
         inner.receiver = None;
+        // wake_flag is preserved across resets
     }
 
     /// Reset the stream with a specific initial value.
@@ -261,6 +298,7 @@ impl<T: Clone + Send + 'static> StreamHandle<T> {
         inner.state = StreamState::Idle;
         inner.started = false;
         inner.receiver = None;
+        // wake_flag is preserved across resets
     }
 }
 

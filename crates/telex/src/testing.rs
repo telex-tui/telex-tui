@@ -522,3 +522,58 @@ impl EventSource for TestEventSource {
         *self.last_buffer.borrow_mut() = terminal.buffer_string();
     }
 }
+
+// =============================================================================
+// StreamTestEventSource - for testing background stream wake behavior
+// =============================================================================
+
+/// A test event source that lets real time pass with no user input.
+///
+/// Unlike `TestEventSource` which fires events instantly, this source
+/// respects poll timeouts and waits until a deadline before sending Ctrl+Q.
+/// This allows background streams to wake the event loop and trigger
+/// re-renders — exactly what we need to test the wake mechanism.
+pub struct StreamTestEventSource {
+    deadline: std::time::Instant,
+    exhausted: RefCell<bool>,
+    /// Every rendered frame's buffer, in order.
+    frames: RefCell<Vec<String>>,
+}
+
+impl StreamTestEventSource {
+    /// Create a new stream test source that waits `duration` before quitting.
+    pub fn new(duration: Duration) -> Self {
+        Self {
+            deadline: std::time::Instant::now() + duration,
+            exhausted: RefCell::new(false),
+            frames: RefCell::new(Vec::new()),
+        }
+    }
+
+    /// Get all rendered frame buffers, in order.
+    pub fn frames(&self) -> Vec<String> {
+        self.frames.borrow().clone()
+    }
+}
+
+impl EventSource for StreamTestEventSource {
+    fn poll_event(&self, timeout: Duration) -> std::io::Result<Option<Event>> {
+        if std::time::Instant::now() >= self.deadline {
+            if !*self.exhausted.borrow() {
+                *self.exhausted.borrow_mut() = true;
+                return Ok(Some(Event::Key(KeyEvent::new(
+                    KeyCode::Char('q'),
+                    KeyModifiers::CONTROL,
+                ))));
+            }
+            return Ok(None);
+        }
+        // Actually sleep — let background threads send tokens and set wake flags
+        std::thread::sleep(timeout);
+        Ok(None)
+    }
+
+    fn on_frame_rendered(&self, terminal: &Terminal) {
+        self.frames.borrow_mut().push(terminal.buffer_string());
+    }
+}

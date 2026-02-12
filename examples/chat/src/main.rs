@@ -134,7 +134,8 @@ impl Component for App {
         });
 
         // Check if we're actively streaming (request started but not done)
-        let is_streaming = request_id.get() > last_started_id.get() || stream.is_streaming();
+        let is_streaming =
+            request_id.get() > 0 && (request_id.get() > last_started_id.get() || stream.is_streaming());
         let current_response = stream.get();
 
         let on_change = with!(input => move |s| input.set(s));

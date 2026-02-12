@@ -439,6 +439,24 @@ pub fn run_headless<C: Component>(
     event_source.last_buffer()
 }
 
+/// Runs the real event loop with no user input for `duration`, then exits.
+///
+/// Returns all rendered frames in order. The last frame is rendered when
+/// Ctrl+Q arrives; frames before that were triggered by wake events
+/// (channels, streams) or the initial render. Use this to test that
+/// background streams wake the event loop without user input.
+pub fn run_headless_timed<C: Component>(
+    root: C,
+    width: u16,
+    height: u16,
+    duration: Duration,
+) -> Vec<String> {
+    let terminal = Terminal::new_headless(width, height);
+    let event_source = testing::StreamTestEventSource::new(duration);
+    let _ = run_inner(root, terminal, &event_source);
+    event_source.frames()
+}
+
 /// Inner event loop shared by `run()` and `run_headless()`.
 fn run_inner<C: Component, E: EventSource>(
     root: C,
@@ -477,7 +495,10 @@ fn run_inner<C: Component, E: EventSource>(
         // Compute poll timeout: 0ms if wake flag is set (external event arrived),
         // otherwise 16ms (~60fps). Reset the flag before polling.
         let woken = wake_flag.swap(false, Ordering::Acquire);
-        let poll_timeout = if woken || needs_render {
+        if woken {
+            needs_render = true;
+        }
+        let poll_timeout = if needs_render {
             Duration::ZERO
         } else {
             Duration::from_millis(16)
