@@ -515,7 +515,11 @@ impl FocusManager {
         if self.focusables.is_empty() {
             return;
         }
-        self.focus_visible = true;
+        if !self.focus_visible {
+            // First Tab just reveals focus on the current element
+            self.focus_visible = true;
+            return;
+        }
         self.focus_index = (self.focus_index + 1) % self.focusables.len();
     }
 
@@ -524,7 +528,11 @@ impl FocusManager {
         if self.focusables.is_empty() {
             return;
         }
-        self.focus_visible = true;
+        if !self.focus_visible {
+            // First Shift+Tab just reveals focus on the current element
+            self.focus_visible = true;
+            return;
+        }
         if self.focus_index == 0 {
             self.focus_index = self.focusables.len() - 1;
         } else {

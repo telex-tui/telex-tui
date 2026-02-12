@@ -95,6 +95,9 @@ fn test_focus_navigation() {
     assert_eq!(app.focusable_count(), 3);
     assert_eq!(app.focus_index(), 0);
 
+    app.focus_next(); // First Tab reveals focus, stays at 0
+    assert_eq!(app.focus_index(), 0);
+
     app.focus_next();
     assert_eq!(app.focus_index(), 1);
 

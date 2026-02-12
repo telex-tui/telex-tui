@@ -305,6 +305,9 @@ fn test_focus_order_vstack() {
 
     assert_eq!(app.focus_index(), 0);
 
+    app.focus_next(); // First Tab reveals focus, stays at 0
+    assert_eq!(app.focus_index(), 0);
+
     app.focus_next();
     assert_eq!(app.focus_index(), 1);
 
@@ -346,6 +349,8 @@ fn test_focus_order_nested() {
     assert_eq!(app.focusable_count(), 3);
 
     assert_eq!(app.focus_index(), 0); // A
+    app.focus_next(); // First Tab reveals focus, stays at A
+    assert_eq!(app.focus_index(), 0); // A
     app.focus_next();
     assert_eq!(app.focus_index(), 1); // B
     app.focus_next();
@@ -361,6 +366,8 @@ fn test_focus_prev_wraps() {
             .build()
     });
 
+    assert_eq!(app.focus_index(), 0);
+    app.focus_prev(); // First Shift+Tab reveals focus, stays at 0
     assert_eq!(app.focus_index(), 0);
     app.focus_prev();
     assert_eq!(app.focus_index(), 1, "Should wrap to last element");

@@ -151,11 +151,18 @@ use command::CommandRegistry;
 use context::ContextStorage;
 use focus::FocusManager;
 use scope::StateStorage;
+use std::cell::Cell;
 use std::io::{self, Result};
 use std::panic;
 use std::rc::Rc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
+
+thread_local! {
+    /// When true, the panic hook skips terminal cleanup because the panic will
+    /// be caught by an error boundary's `catch_unwind`.
+    pub(crate) static IN_ERROR_BOUNDARY: Cell<bool> = const { Cell::new(false) };
+}
 use theme::Theme;
 
 /// Trait for providing input events to the run loop.
@@ -347,6 +354,12 @@ pub fn run<C: Component>(root: C) -> Result<()> {
     // Set up custom panic handler to restore terminal on panic
     let default_hook = panic::take_hook();
     panic::set_hook(Box::new(move |panic_info| {
+        // If we're inside an error boundary's catch_unwind, skip cleanup —
+        // the boundary will handle rendering the fallback.
+        if IN_ERROR_BOUNDARY.with(|f| f.get()) {
+            return;
+        }
+
         // Try to restore terminal state
         let _ = crossterm::terminal::disable_raw_mode();
         let _ = crossterm::execute!(

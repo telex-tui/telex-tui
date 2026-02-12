@@ -346,9 +346,12 @@ fn render_error_boundary(
     ctx: &mut RenderContext,
 ) {
     // Try rendering the child; if it panics, render the fallback instead.
+    // Tell the panic hook to stay quiet — we'll handle it here.
+    crate::IN_ERROR_BOUNDARY.with(|f| f.set(true));
     let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
         render_view(buffer, &node.child, area, ctx);
     }));
+    crate::IN_ERROR_BOUNDARY.with(|f| f.set(false));
 
     if result.is_err() {
         // Child panicked — clear the area and render fallback
