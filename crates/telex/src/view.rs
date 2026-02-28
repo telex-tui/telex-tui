@@ -1079,6 +1079,14 @@ pub struct TreeItem {
     pub children: Vec<TreeItem>,
     /// Whether this node is expanded (showing children).
     pub expanded: bool,
+    /// Optional foreground color override (None = use theme).
+    pub fg: Option<crossterm::style::Color>,
+    /// Optional background color override (None = use theme).
+    pub bg: Option<crossterm::style::Color>,
+    /// Whether to render this item in bold.
+    pub bold: bool,
+    /// Whether to render this item dimmed.
+    pub dim: bool,
 }
 
 impl TreeItem {
@@ -1089,6 +1097,10 @@ impl TreeItem {
             icon: None,
             children: Vec::new(),
             expanded: false,
+            fg: None,
+            bg: None,
+            bold: false,
+            dim: false,
         }
     }
 
@@ -1107,6 +1119,30 @@ impl TreeItem {
     /// Set whether this node is expanded.
     pub fn expanded(mut self, expanded: bool) -> Self {
         self.expanded = expanded;
+        self
+    }
+
+    /// Set foreground color override.
+    pub fn fg(mut self, color: crossterm::style::Color) -> Self {
+        self.fg = Some(color);
+        self
+    }
+
+    /// Set background color override.
+    pub fn bg(mut self, color: crossterm::style::Color) -> Self {
+        self.bg = Some(color);
+        self
+    }
+
+    /// Set bold rendering.
+    pub fn bold(mut self, bold: bool) -> Self {
+        self.bold = bold;
+        self
+    }
+
+    /// Set dim rendering.
+    pub fn dim(mut self, dim: bool) -> Self {
+        self.dim = dim;
         self
     }
 

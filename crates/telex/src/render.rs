@@ -1816,15 +1816,18 @@ fn render_tree(buffer: &mut Buffer, node: &TreeNode, area: Rect, ctx: &mut Rende
             format!("{:width$}", line, width = area.width as usize)
         };
 
-        let (fg, bg) = if is_selected && is_focused {
-            (theme.selection_fg, theme.selection_bg)
-        } else if is_selected {
-            (theme.primary, theme.background)
+        let (fg, bg, bold, dim) = if is_selected && is_focused {
+            (theme.selection_fg, theme.selection_bg, false, false)
         } else {
-            (theme.foreground, theme.background)
+            (
+                item.fg.unwrap_or(theme.foreground),
+                item.bg.unwrap_or(theme.background),
+                item.bold,
+                item.dim,
+            )
         };
 
-        buffer.write_str(area.x, y, &display, fg, bg);
+        buffer.write_str_styled(area.x, y, &display, fg, bg, bold, false, false, dim);
     }
 
     // Fill remaining rows if tree is shorter than area

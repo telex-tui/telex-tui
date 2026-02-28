@@ -1397,6 +1397,42 @@ impl FocusManager {
         }
     }
 
+    /// Select the first visible tree item.
+    pub fn tree_select_first(&self) {
+        if let Some(Focusable::Tree {
+            items,
+            on_select,
+            ..
+        }) = self.focusables.get(self.focus_index)
+        {
+            let visible = Self::flatten_tree(items, &[]);
+            if visible.is_empty() {
+                return;
+            }
+            if let Some(callback) = on_select {
+                callback(visible[0].0.clone());
+            }
+        }
+    }
+
+    /// Select the last visible tree item.
+    pub fn tree_select_last(&self) {
+        if let Some(Focusable::Tree {
+            items,
+            on_select,
+            ..
+        }) = self.focusables.get(self.focus_index)
+        {
+            let visible = Self::flatten_tree(items, &[]);
+            if visible.is_empty() {
+                return;
+            }
+            if let Some(callback) = on_select {
+                callback(visible[visible.len() - 1].0.clone());
+            }
+        }
+    }
+
     /// Activate the currently selected tree item (trigger on_activate callback).
     pub fn tree_activate(&self) {
         if let Some(Focusable::Tree {

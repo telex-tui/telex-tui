@@ -841,6 +841,8 @@ fn run_inner<C: Component, E: EventSource>(
                             } else {
                                 focus.scroll_home();
                             }
+                        } else if focus.is_focused_tree() {
+                            focus.tree_select_first();
                         }
                     }
                     (KeyModifiers::NONE, KeyCode::End) => {
@@ -851,6 +853,8 @@ fn run_inner<C: Component, E: EventSource>(
                             } else {
                                 focus.scroll_end(max_scroll);
                             }
+                        } else if focus.is_focused_tree() {
+                            focus.tree_select_last();
                         }
                     }
                     // Left/Right arrows for text inputs, text areas, tabs, tree, and menu bar
@@ -914,10 +918,12 @@ fn run_inner<C: Component, E: EventSource>(
                                 _ => {}
                             }
                         } else if focus.is_focused_tree() {
-                            // j/k for vim-style navigation, space for activate
+                            // j/k for vim-style navigation, g/G for first/last, space for activate
                             match c {
                                 'j' => focus.tree_select_next(),
                                 'k' => focus.tree_select_prev(),
+                                'g' => focus.tree_select_first(),
+                                'G' => focus.tree_select_last(),
                                 ' ' => focus.tree_activate(),
                                 _ => {}
                             }
@@ -944,6 +950,8 @@ fn run_inner<C: Component, E: EventSource>(
                             focus.text_area_key(c.to_ascii_uppercase());
                         } else if focus.is_focused_form_field() {
                             focus.form_field_key(c.to_ascii_uppercase());
+                        } else if focus.is_focused_tree() && c.to_ascii_uppercase() == 'G' {
+                            focus.tree_select_last();
                         }
                     }
                     _ => {}
