@@ -6,7 +6,7 @@ members = [
     "examples/chat",
     "examples/layout-showcase",
     "examples/layout-playground",
-    "examples/perf-test", "play/demo",
+    "examples/perf-test",
 ]
 
 [workspace.package]
