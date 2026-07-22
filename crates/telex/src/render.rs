@@ -1,5 +1,7 @@
 use std::panic::AssertUnwindSafe;
 
+use unicode_width::UnicodeWidthStr;
+
 use crate::buffer::{Buffer, Rect};
 use crate::canvas::PendingCanvas;
 use crate::image::PendingImage;
@@ -1167,7 +1169,97 @@ fn render_list(buffer: &mut Buffer, node: &ListNode, area: Rect, ctx: &mut Rende
             (theme.foreground, theme.background)
         };
 
-        buffer.write_str(area.x, area.y + row as u16, &display, fg, bg);
+        // Build styled spans from highlights (bold primary), colored_highlights, and annotations (dim)
+        let hl_ranges = node.highlights.get(item_idx);
+        let chl_ranges = node.colored_highlights.get(item_idx);
+        let ann_ranges = node.annotations.get(item_idx);
+        let has_spans = hl_ranges.map_or(false, |h| !h.is_empty())
+            || chl_ranges.map_or(false, |c| !c.is_empty())
+            || ann_ranges.map_or(false, |a| !a.is_empty());
+
+        if has_spans {
+            let prefix_len = prefix.len();
+            let display_len = display.len();
+
+            // Merge all range types into tagged spans:
+            // 1=highlight, 2=annotation, 10+=colored (10 + color_idx)
+            let mut spans: Vec<(usize, usize, u8)> = Vec::new();
+            if let Some(ranges) = hl_ranges {
+                for &(s, e) in ranges {
+                    let s = (s + prefix_len).min(display_len);
+                    let e = (e + prefix_len).min(display_len);
+                    if s < e { spans.push((s, e, 1)); }
+                }
+            }
+            if let Some(ranges) = chl_ranges {
+                for &(s, e, color_idx) in ranges {
+                    let s = (s + prefix_len).min(display_len);
+                    let e = (e + prefix_len).min(display_len);
+                    if s < e { spans.push((s, e, 10 + color_idx)); }
+                }
+            }
+            if let Some(ranges) = ann_ranges {
+                for &(s, e) in ranges {
+                    let s = (s + prefix_len).min(display_len);
+                    let e = (e + prefix_len).min(display_len);
+                    if s < e { spans.push((s, e, 2)); }
+                }
+            }
+            spans.sort_by_key(|&(s, _, _)| s);
+
+            let mut pos: usize = 0;
+            let mut col = area.x;
+            let y = area.y + row as u16;
+
+            for (span_start, span_end, kind) in &spans {
+                // Skip spans fully consumed by a previous (overlapping) span
+                if *span_end <= pos {
+                    continue;
+                }
+                // Clip span_start to pos so overlapping spans don't re-render
+                let effective_start = (*span_start).max(pos);
+
+                if pos < effective_start {
+                    let normal = &display[pos..effective_start];
+                    buffer.write_str(col, y, normal, fg, bg);
+                    col += UnicodeWidthStr::width(normal) as u16;
+                }
+                let span_text = &display[effective_start..*span_end];
+                match kind {
+                    1 => {
+                        // Use warning color on selected rows for contrast against selection_bg
+                        let hl_fg = if is_selected { theme.warning } else { theme.primary };
+                        buffer.write_str_styled(col, y, span_text, hl_fg, bg, true, false, false, false);
+                    }
+                    k if *k >= 10 => {
+                        // Colored highlights: map color_idx to theme colors
+                        let hl_fg = if is_selected {
+                            theme.warning
+                        } else {
+                            match k - 10 {
+                                0 => theme.primary,   // cyan
+                                1 => theme.warning,   // yellow
+                                2 => theme.success,   // green
+                                3 => theme.error,     // red
+                                4 => theme.secondary, // magenta
+                                _ => theme.primary,
+                            }
+                        };
+                        buffer.write_str_styled(col, y, span_text, hl_fg, bg, true, false, false, false);
+                    }
+                    _ => buffer.write_str_styled(col, y, span_text, theme.secondary, bg, false, false, false, false),
+                }
+                col += UnicodeWidthStr::width(span_text) as u16;
+                pos = *span_end;
+            }
+
+            if pos < display_len {
+                let remaining = &display[pos..];
+                buffer.write_str(col, y, remaining, fg, bg);
+            }
+        } else {
+            buffer.write_str(area.x, area.y + row as u16, &display, fg, bg);
+        }
     }
 
     // Draw scroll indicator if needed

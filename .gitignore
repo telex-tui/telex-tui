@@ -19,3 +19,8 @@ Cargo.lock
 docs/book/book/
 
 play/
+
+# Local secrets
+.env
+.env.*
+!.env.example

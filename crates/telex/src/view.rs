@@ -561,10 +561,13 @@ impl View {
     }
 
     /// Get the flex factor of this view (for layout).
+    /// TextInput and TextArea default to flex(1) so they fill available space
+    /// in HStack layouts without requiring an explicit flex wrapper.
     pub fn flex(&self) -> u16 {
         match self {
             View::Box(n) => n.flex,
             View::Spacer(n) => n.flex,
+            View::TextInput(_) | View::TextArea(_) => 1,
             _ => 0,
         }
     }
@@ -943,6 +946,13 @@ pub struct ButtonNode {
 pub struct ListNode {
     /// The list items to display.
     pub items: Vec<String>,
+    /// Per-item highlight byte ranges (rendered bold in primary color).
+    pub highlights: Vec<Vec<(usize, usize)>>,
+    /// Per-item colored highlight byte ranges: (start, end, color_index).
+    /// Each range carries a u8 color index for multi-pattern highlighting.
+    pub colored_highlights: Vec<Vec<(usize, usize, u8)>>,
+    /// Per-item annotation byte ranges (rendered dim/muted).
+    pub annotations: Vec<Vec<(usize, usize)>>,
     /// Currently selected index.
     pub selected: usize,
     /// Callback when selection changes.
@@ -1521,6 +1531,9 @@ impl BoxBuilder {
 #[derive(Default)]
 pub struct ListBuilder {
     items: Vec<String>,
+    highlights: Vec<Vec<(usize, usize)>>,
+    colored_highlights: Vec<Vec<(usize, usize, u8)>>,
+    annotations: Vec<Vec<(usize, usize)>>,
     selected: usize,
     on_select: Option<SelectCallback>,
 }
@@ -1545,9 +1558,27 @@ impl ListBuilder {
         self
     }
 
+    pub fn highlights(mut self, highlights: Vec<Vec<(usize, usize)>>) -> Self {
+        self.highlights = highlights;
+        self
+    }
+
+    pub fn colored_highlights(mut self, colored_highlights: Vec<Vec<(usize, usize, u8)>>) -> Self {
+        self.colored_highlights = colored_highlights;
+        self
+    }
+
+    pub fn annotations(mut self, annotations: Vec<Vec<(usize, usize)>>) -> Self {
+        self.annotations = annotations;
+        self
+    }
+
     pub fn build(self) -> View {
         View::List(ListNode {
             items: self.items,
+            highlights: self.highlights,
+            colored_highlights: self.colored_highlights,
+            annotations: self.annotations,
             selected: self.selected,
             on_select: self.on_select,
         })
