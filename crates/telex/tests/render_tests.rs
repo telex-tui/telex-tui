@@ -1079,3 +1079,101 @@ fn test_status_bar_empty_sections() {
     // Should render without errors even with empty content
     assert!(!rendered.is_empty(), "Should render something");
 }
+
+// ============================================================
+// VStack Flex Propagation Tests
+// ============================================================
+
+/// Height of the bordered box block whose content line contains `label`, measured
+/// from its top border ('┌') to its bottom border ('└'), inclusive.
+fn bordered_box_height(lines: &[String], label: &str) -> usize {
+    let content_idx = lines
+        .iter()
+        .position(|l| l.contains(label))
+        .unwrap_or_else(|| panic!("no line contains {label:?}: {lines:?}"));
+    let top = (0..=content_idx)
+        .rev()
+        .find(|&i| lines[i].contains('┌'))
+        .unwrap_or_else(|| panic!("no top border above {label:?}"));
+    let bottom = (content_idx..lines.len())
+        .find(|&i| lines[i].contains('└'))
+        .unwrap_or_else(|| panic!("no bottom border below {label:?}"));
+    bottom - top + 1
+}
+
+#[test]
+fn test_flex_box_direct_sibling_gets_flex_space() {
+    // Two real, direct flex(1) siblings of the same vstack split flex_space evenly.
+    let mut app = TestApp::new(|_cx: Scope| {
+        View::vstack()
+            .child(View::text("header"))
+            .child(
+                View::boxed()
+                    .border(true)
+                    .flex(1)
+                    .child(View::text("BOXA"))
+                    .build(),
+            )
+            .child(
+                View::boxed()
+                    .border(true)
+                    .flex(1)
+                    .child(View::text("BOXB"))
+                    .build(),
+            )
+            .build()
+    })
+    .with_size(40, 20);
+
+    let lines = app.rendered_lines();
+    let height_a = bordered_box_height(&lines, "BOXA");
+    let height_b = bordered_box_height(&lines, "BOXB");
+    assert_eq!(height_a, height_b, "direct flex(1) siblings should split evenly");
+    assert!(height_a > 3, "flex box should grow past its natural height");
+}
+
+#[test]
+fn test_flex_propagates_through_nested_vstack_wrapper() {
+    // A flex(1) box handed up to the parent vstack wrapped inside its own little
+    // vstack (status line + box) must still receive its share of flex_space, not
+    // collapse to its natural (unflexed) height. Regression test for the bug in
+    // docs/repo-internal/telex-tui-nested-flex-layout-bug.md.
+    let mut app = TestApp::new(|_cx: Scope| {
+        let wrapped = View::vstack()
+            .child(View::text("status"))
+            .child(
+                View::boxed()
+                    .border(true)
+                    .flex(1)
+                    .child(View::text("BOXB"))
+                    .build(),
+            )
+            .build();
+
+        View::vstack()
+            .child(View::text("header"))
+            .child(
+                View::boxed()
+                    .border(true)
+                    .flex(1)
+                    .child(View::text("BOXA"))
+                    .build(),
+            )
+            .child(wrapped)
+            .build()
+    })
+    .with_size(40, 20);
+
+    let lines = app.rendered_lines();
+    let height_a = bordered_box_height(&lines, "BOXA");
+    let height_b = bordered_box_height(&lines, "BOXB");
+    assert_eq!(
+        height_a, height_b,
+        "flex(1) box nested inside a wrapper vstack should get the same flex_space \
+         as a direct flex(1) sibling, not collapse to its natural height"
+    );
+    assert!(
+        height_b > 3,
+        "wrapped flex box should grow past its natural (collapsed) height of ~3 rows"
+    );
+}

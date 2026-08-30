@@ -505,6 +505,21 @@ fn render_vstack(buffer: &mut Buffer, node: &VStackNode, area: Rect, ctx: &mut R
     }
 }
 
+/// Effective flex weight for vstack layout. Honors `flex()` directly, and recurses into
+/// a nested vstack wrapper so a `flex(1)` box handed up via `.child(some_vstack)` still
+/// competes for `flex_space` with its siblings instead of silently collapsing to its
+/// natural height (docs/repo-internal/telex-tui-nested-flex-layout-bug.md).
+fn effective_vstack_flex(view: &View) -> u16 {
+    let flex = view.flex();
+    if flex > 0 {
+        return flex;
+    }
+    match view {
+        View::VStack(n) => n.children.iter().map(effective_vstack_flex).sum(),
+        _ => 0,
+    }
+}
+
 fn render_vstack_flex(buffer: &mut Buffer, node: &VStackNode, area: Rect, ctx: &mut RenderContext) {
     use crate::view::{Align, Justify};
 
@@ -526,7 +541,7 @@ fn render_vstack_flex(buffer: &mut Buffer, node: &VStackNode, area: Rect, ctx: &
     let mut child_heights: Vec<u16> = Vec::with_capacity(child_count);
 
     for child in &node.children {
-        let flex = child.flex();
+        let flex = effective_vstack_flex(child);
         // Use width-aware height calculation for text wrapping
         let min_h = child
             .min_height()
@@ -544,7 +559,7 @@ fn render_vstack_flex(buffer: &mut Buffer, node: &VStackNode, area: Rect, ctx: &
 
     // Second pass: calculate final heights (applying flex)
     for (i, child) in node.children.iter().enumerate() {
-        let flex = child.flex();
+        let flex = effective_vstack_flex(child);
         let max_h = child.max_height();
 
         if flex > 0 && total_flex > 0 {
