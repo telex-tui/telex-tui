@@ -922,19 +922,28 @@ fn render_scrolled(
             render_vstack_scrolled(buffer, node, area, scroll_y, ctx);
         }
         View::Text(node) => {
-            // For multi-line text, skip scroll_y lines
+            // `scroll_y` is computed by the caller (`render_box`) from
+            // `wrapped_height`, i.e. in *soft-wrapped visual line* units, at
+            // this same `area.width`. Skipping raw `node.content.lines())`
+            // entries here instead used to skip *unwrapped* lines, so any
+            // content with lines wider than `area.width` diverged: scroll_y
+            // would outrun the (much smaller) raw line count, `.skip()` would
+            // empty the iterator, and the box would render blank forever
+            // even though the stream was still live. Use the same
+            // `text::soft_wrap` visual lines `wrapped_height` counted, so the
+            // units match.
             let theme = current_theme();
             let fg = node.color.unwrap_or(theme.foreground);
             let bg = node.bg_color.unwrap_or(theme.background);
-            let lines: Vec<&str> = node.content.lines().collect();
-            for (i, line) in lines.iter().skip(scroll_y as usize).enumerate() {
+            let visual_lines = text::soft_wrap(&node.content, area.width as usize);
+            for (i, visual_line) in visual_lines.iter().skip(scroll_y as usize).enumerate() {
                 if i as u16 >= area.height {
                     break;
                 }
                 buffer.write_str_styled(
                     area.x,
                     area.y + i as u16,
-                    line,
+                    visual_line.text,
                     fg,
                     bg,
                     node.bold,

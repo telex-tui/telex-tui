@@ -1177,3 +1177,37 @@ fn test_flex_propagates_through_nested_vstack_wrapper() {
         "wrapped flex box should grow past its natural (collapsed) height of ~3 rows"
     );
 }
+
+// ============================================================
+// Auto-Scroll-Bottom Wrapped-Line Regression
+// ============================================================
+
+#[test]
+fn test_auto_scroll_bottom_stays_visible_with_wrapping_lines() {
+    // `render_box`'s auto_scroll_bottom path computes its scroll offset from
+    // `wrapped_height` (soft-wrapped visual-line count at the box's width), but
+    // `render_scrolled`'s Text branch used to skip raw `.lines()` entries — one
+    // row each, regardless of width. Any line long enough to wrap to more than
+    // one row made those two counts diverge: the offset (in wrapped-row units)
+    // eventually exceeds the real line count, `.skip()` empties the iterator,
+    // and the box renders blank forever even though its content keeps growing.
+    let width: usize = 16; // narrow enough that every line below wraps
+    let long_lines: Vec<String> = (1..=40)
+        .map(|i| format!("line-{i:02}-this-is-long-enough-to-wrap-several-times"))
+        .collect();
+    let content = long_lines.join("\n");
+
+    let mut app = TestApp::new(move |_cx: Scope| {
+        View::boxed()
+            .border(true)
+            .scroll(true)
+            .auto_scroll_bottom(true)
+            .max_width(width as u16 + 2) // + border
+            .max_height(10)
+            .child(View::text(&content))
+            .build()
+    })
+    .with_size(30, 12);
+
+    app.assert_visible("line-40");
+}
