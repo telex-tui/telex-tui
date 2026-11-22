@@ -372,16 +372,27 @@ direction.
 pub struct FocusManager {
     focus_index: usize,
     focusables: Vec<Focusable>,
-    scroll_states: Vec<(u16, u16)>,
-    initial_focus_applied: bool,
+    ids: Vec<FocusId>,                 // Key(String) from .key(), else Position(usize)
+    prev_requested: HashSet<FocusId>,  // focus requests seen last collection
+    keyed_scroll: HashMap<String, (u16, u16)>,
+    positional_scroll: Vec<(u16, u16)>,
     in_modal: bool,
-    saved_focus_index: Option<usize>,
+    saved_focus_id: Option<FocusId>,
+    // ...cursor state, scroll limits, focus visibility
 }
 ```
 
 **Linear collection approach:**
 
 Every render, we walk the `View` tree and collect focusable elements in order.
+
+**Stable identity:**
+
+Each focusable gets a `FocusId`: its `.key()` when given, otherwise its position.
+Focus, scroll offsets and cursor positions follow the id, so a keyed widget keeps its
+state when the tree shifts and drops it when it leaves the tree. A `.focused(true)`
+request is applied whenever its id newly requests focus. See
+[`focus-identity-design.md`](focus-identity-design.md).
 
 **Modal focus containment:**
 
@@ -646,7 +657,6 @@ but could benefit from a layout cache and more sophisticated text measurement.
 If needed:
 - Cache layout calculations
 - Component-level memoization (selective re-rendering)
-- Smarter focus tracking with stable IDs
 
 But premature optimization is the root of all evil. Current approach is fast enough for terminals.
 

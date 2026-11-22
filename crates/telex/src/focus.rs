@@ -7,6 +7,10 @@
 #![allow(clippy::collapsible_if)]
 #![allow(clippy::collapsible_match)]
 
+use std::collections::{HashMap, HashSet};
+
+use crossterm::event::{KeyCode, KeyModifiers};
+
 use crate::render::ScrollLimit;
 use crate::text;
 use crate::view::{
@@ -130,27 +134,56 @@ pub enum Focusable {
     },
 }
 
+/// Identity of a collected focusable: its `.key()` when given (and not a duplicate),
+/// otherwise its position in this frame's focus order.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub(crate) enum FocusId {
+    Key(String),
+    Position(usize),
+}
+
 /// Manages focus and scroll state for the application.
+///
+/// Focus, scroll offsets and cursor positions follow a widget's [`FocusId`]: a keyed
+/// widget keeps its state wherever it moves in the tree, and loses it when it leaves the
+/// tree; an unkeyed widget's state is kept by position, as it always has been.
 #[derive(Default)]
 pub struct FocusManager {
     /// Current focus index
     focus_index: usize,
     /// Focusable elements (collected during render)
     focusables: Vec<Focusable>,
-    /// Preserved scroll states keyed by focusable index
-    /// (persists across re-collects to maintain scroll position)
+    /// Identity of each focusable, aligned with `focusables`
+    ids: Vec<FocusId>,
+    /// Indices of focusables requesting focus this collection, in tree order
+    requests: Vec<usize>,
+    /// Ids that requested focus on the previous collection — a request is applied only
+    /// when its id wasn't already requesting
+    prev_requested: HashSet<FocusId>,
+    /// Keys seen more than once in the latest collection (all but the first fall back to
+    /// positional identity)
+    duplicate_keys: Vec<String>,
+    /// Working scroll states, aligned with `focusables` (loaded from the stores below on
+    /// each collection, committed back on the next)
     scroll_states: Vec<(u16, u16)>,
     /// Scroll limits measured by the last render, keyed by focusable index
     scroll_limits: Vec<ScrollLimit>,
-    /// Preserved cursor positions for text inputs keyed by focusable index
+    /// Working cursor positions for text inputs, aligned with `focusables`
     cursor_states: Vec<usize>,
-    /// Whether initial focus has been applied (only happens once)
-    initial_focus_applied: bool,
+    /// Scroll state of keyed widgets present in the tree
+    keyed_scroll: HashMap<String, (u16, u16)>,
+    /// Cursor state of keyed widgets present in the tree
+    keyed_cursor: HashMap<String, usize>,
+    /// Scroll state of unkeyed widgets, by position (persists across re-collects)
+    positional_scroll: Vec<(u16, u16)>,
+    /// Cursor state of unkeyed widgets, by position (persists across re-collects)
+    positional_cursor: Vec<usize>,
     /// Whether we're currently collecting focusables from within a modal
     in_modal: bool,
-    /// Saved focus index from before entering modal (to restore when modal closes)
-    saved_focus_index: Option<usize>,
-    /// Whether focus styling should be shown (becomes true on first Tab/Shift+Tab)
+    /// Focused widget from before entering a modal (restored when it closes)
+    saved_focus_id: Option<FocusId>,
+    /// Whether focus styling should be shown (becomes true on first Tab/Shift+Tab, or when
+    /// a focus request is applied)
     focus_visible: bool,
 }
 
@@ -168,6 +201,11 @@ impl FocusManager {
     /// Get the total number of focusable elements.
     pub fn focusable_count(&self) -> usize {
         self.focusables.len()
+    }
+
+    /// Keys used by more than one focusable in the latest collection.
+    pub(crate) fn duplicate_keys(&self) -> &[String] {
+        &self.duplicate_keys
     }
 
     /// Get scroll offset for a focusable at the given index.
@@ -204,59 +242,169 @@ impl FocusManager {
     /// Collect all focusable elements from the view tree.
     /// When a modal is visible, only collects focusables from within the modal.
     pub fn collect_focusables(&mut self, view: &View) {
+        // Save the working state under last collection's ids, and note what was
+        // focused, before the list is rebuilt
+        self.commit_states();
+        let prev_focused = self.ids.get(self.focus_index).cloned();
+
         self.focusables.clear();
+        self.ids.clear();
+        self.requests.clear();
+        self.duplicate_keys.clear();
 
         // Check if there's a visible modal - if so, only collect from within it
-        if let Some(modal_child) = Self::find_visible_modal_content(view) {
-            let initial_focus = self.collect_recursive(modal_child);
+        let modal_child = Self::find_visible_modal_content(view);
+        self.collect_recursive(modal_child.unwrap_or(view));
 
-            // Entering modal - save focus and reset to first modal item
+        let new_request = self
+            .requests
+            .iter()
+            .copied()
+            .find(|&i| !self.prev_requested.contains(&self.ids[i]));
+
+        if modal_child.is_some() {
             if !self.in_modal {
-                self.saved_focus_index = Some(self.focus_index);
+                // Entering modal - save focus and move to the modal's requested item
+                // (or its first)
+                self.saved_focus_id = prev_focused;
                 self.in_modal = true;
-                // Set focus to first modal item (or initial_focus if specified)
-                if let Some(idx) = initial_focus {
-                    self.focus_index = idx;
-                } else {
-                    self.focus_index = 0;
+                match self.requests.first() {
+                    Some(&idx) => self.apply_request(idx),
+                    None => self.focus_index = 0,
                 }
+            } else {
+                self.follow_or_request(prev_focused, new_request);
+            }
+        } else if self.in_modal {
+            // Leaving modal - restore the saved widget (by key, or else by position)
+            self.in_modal = false;
+            if let Some(idx) = self.saved_focus_id.take().and_then(|id| self.index_of(&id)) {
+                self.focus_index = idx;
             }
         } else {
-            // No visible modal - collect from entire view tree
-            let initial_focus = self.collect_recursive(view);
-
-            // Leaving modal - restore saved focus
-            if self.in_modal {
-                self.in_modal = false;
-                if let Some(saved) = self.saved_focus_index.take() {
-                    // Restore if valid, otherwise keep current
-                    if saved < self.focusables.len() {
-                        self.focus_index = saved;
-                    }
-                }
-            } else if let Some(idx) = initial_focus {
-                // Normal initial focus (only happens once, on first collection)
-                if !self.initial_focus_applied {
-                    self.focus_index = idx;
-                    self.initial_focus_applied = true;
-                }
-            }
+            self.follow_or_request(prev_focused, new_request);
         }
 
-        // Ensure scroll_states has enough entries
-        while self.scroll_states.len() < self.focusables.len() {
-            self.scroll_states.push((0, 0));
-        }
+        self.prev_requested = self.requests.iter().map(|&i| self.ids[i].clone()).collect();
 
-        // Ensure cursor_states has enough entries
-        while self.cursor_states.len() < self.focusables.len() {
-            self.cursor_states.push(usize::MAX); // MAX means "use value from view"
+        // Keyed state lives as long as its widget. While a modal is up the rest of the
+        // tree isn't collected, so absence then doesn't mean the widget is gone
+        if modal_child.is_none() {
+            self.prune_keyed_states();
         }
+        self.load_states();
 
         // Ensure focus index is valid
         if !self.focusables.is_empty() && self.focus_index >= self.focusables.len() {
             self.focus_index = 0;
         }
+    }
+
+    /// Push a collected focusable with its identity and focus request.
+    fn push_focusable(&mut self, key: &Option<String>, focused: bool, focusable: Focusable) {
+        let idx = self.focusables.len();
+        let id = match key {
+            Some(k) if !self.ids.iter().any(|id| matches!(id, FocusId::Key(existing) if existing == k)) => {
+                FocusId::Key(k.clone())
+            }
+            Some(k) => {
+                // Duplicate: first in tree order keeps the key, this one is positional
+                if !self.duplicate_keys.contains(k) {
+                    self.duplicate_keys.push(k.clone());
+                }
+                FocusId::Position(idx)
+            }
+            None => FocusId::Position(idx),
+        };
+        self.focusables.push(focusable);
+        self.ids.push(id);
+        if focused {
+            self.requests.push(idx);
+        }
+    }
+
+    /// Apply a newly appeared focus request, or else keep focus on the same keyed widget
+    /// if it moved.
+    fn follow_or_request(&mut self, prev_focused: Option<FocusId>, new_request: Option<usize>) {
+        if let Some(idx) = new_request {
+            self.apply_request(idx);
+        } else if let Some(id @ FocusId::Key(_)) = prev_focused {
+            if let Some(idx) = self.index_of(&id) {
+                self.focus_index = idx;
+            }
+        }
+    }
+
+    /// Focus moved by the app on purpose is shown, the same as a Tab press.
+    fn apply_request(&mut self, idx: usize) {
+        self.focus_index = idx;
+        self.focus_visible = true;
+    }
+
+    /// Current index of a focusable by id: a key wherever it now is, a position if still
+    /// in range.
+    fn index_of(&self, id: &FocusId) -> Option<usize> {
+        match id {
+            FocusId::Key(_) => self.ids.iter().position(|other| other == id),
+            FocusId::Position(idx) => (*idx < self.focusables.len()).then_some(*idx),
+        }
+    }
+
+    /// Save the working per-index state into the keyed/positional stores.
+    fn commit_states(&mut self) {
+        for (i, id) in self.ids.iter().enumerate() {
+            let scroll = self.scroll_states.get(i).copied().unwrap_or((0, 0));
+            let cursor = self.cursor_states.get(i).copied().unwrap_or(usize::MAX);
+            match id {
+                FocusId::Key(k) => {
+                    self.keyed_scroll.insert(k.clone(), scroll);
+                    self.keyed_cursor.insert(k.clone(), cursor);
+                }
+                FocusId::Position(p) => {
+                    if self.positional_scroll.len() <= *p {
+                        self.positional_scroll.resize(*p + 1, (0, 0));
+                        self.positional_cursor.resize(*p + 1, usize::MAX);
+                    }
+                    self.positional_scroll[*p] = scroll;
+                    self.positional_cursor[*p] = cursor;
+                }
+            }
+        }
+    }
+
+    /// Drop the state of keyed widgets no longer in the tree.
+    fn prune_keyed_states(&mut self) {
+        let present: HashSet<&str> = self
+            .ids
+            .iter()
+            .filter_map(|id| match id {
+                FocusId::Key(k) => Some(k.as_str()),
+                FocusId::Position(_) => None,
+            })
+            .collect();
+        self.keyed_scroll.retain(|k, _| present.contains(k.as_str()));
+        self.keyed_cursor.retain(|k, _| present.contains(k.as_str()));
+    }
+
+    /// Rebuild the working per-index state from the stores for the new focus list.
+    fn load_states(&mut self) {
+        // MAX means "use value from view"
+        self.scroll_states = self
+            .ids
+            .iter()
+            .map(|id| match id {
+                FocusId::Key(k) => self.keyed_scroll.get(k).copied().unwrap_or((0, 0)),
+                FocusId::Position(p) => self.positional_scroll.get(*p).copied().unwrap_or((0, 0)),
+            })
+            .collect();
+        self.cursor_states = self
+            .ids
+            .iter()
+            .map(|id| match id {
+                FocusId::Key(k) => self.keyed_cursor.get(k).copied().unwrap_or(usize::MAX),
+                FocusId::Position(p) => self.positional_cursor.get(*p).copied().unwrap_or(usize::MAX),
+            })
+            .collect();
     }
 
     /// Find the content of a visible modal in the view tree.
@@ -307,58 +455,44 @@ impl FocusManager {
         }
     }
 
-    /// Collect focusables recursively. Returns the index of an element with `focused: true` if found.
-    fn collect_recursive(&mut self, view: &View) -> Option<usize> {
-        let mut initial_focus = None;
-
+    /// Collect focusables recursively, recording each one's key and focus request.
+    fn collect_recursive(&mut self, view: &View) {
         match view {
             View::Button(btn) => {
-                self.focusables
-                    .push(Focusable::Button(btn.on_press.clone()));
+                self.push_focusable(&btn.key, btn.focused, Focusable::Button(btn.on_press.clone()));
             }
             View::Box(node) => {
                 // If scrollable and focusable, add as focusable first
                 let is_scrollable = node.scroll || node.auto_scroll_bottom;
                 if is_scrollable && node.focusable {
-                    self.focusables.push(Focusable::Scrollable {
+                    self.push_focusable(&node.key, node.focused, Focusable::Scrollable {
                         auto_scroll_bottom: node.auto_scroll_bottom,
                     });
                 }
                 // Then recurse into children
                 if let Some(child) = &node.child {
-                    if let Some(idx) = self.collect_recursive(child) {
-                        initial_focus = Some(idx);
-                    }
+                    self.collect_recursive(child);
                 }
             }
             View::VStack(node) => {
                 for child in &node.children {
-                    if let Some(idx) = self.collect_recursive(child) {
-                        initial_focus = Some(idx);
-                    }
+                    self.collect_recursive(child);
                 }
             }
             View::HStack(node) => {
                 for child in &node.children {
-                    if let Some(idx) = self.collect_recursive(child) {
-                        initial_focus = Some(idx);
-                    }
+                    self.collect_recursive(child);
                 }
             }
             View::List(node) => {
-                self.focusables.push(Focusable::List {
+                self.push_focusable(&node.key, node.focused, Focusable::List {
                     items_count: node.items.len(),
                     selected: node.selected,
                     on_select: node.on_select.clone(),
                 });
             }
             View::TextInput(node) => {
-                // Track if this input requested initial focus
-                let idx = self.focusables.len();
-                if node.focused {
-                    initial_focus = Some(idx);
-                }
-                self.focusables.push(Focusable::TextInput {
+                self.push_focusable(&node.key, node.focused, Focusable::TextInput {
                     value: node.value.clone(),
                     cursor_pos: node.cursor_pos,
                     on_change: node.on_change.clone(),
@@ -369,7 +503,7 @@ impl FocusManager {
                 });
             }
             View::TextArea(node) => {
-                self.focusables.push(Focusable::TextArea {
+                self.push_focusable(&node.key, node.focused, Focusable::TextArea {
                     value: node.value.clone(),
                     cursor_line: node.cursor_line,
                     cursor_col: node.cursor_col,
@@ -379,13 +513,13 @@ impl FocusManager {
                 });
             }
             View::Checkbox(node) => {
-                self.focusables.push(Focusable::Checkbox {
+                self.push_focusable(&node.key, node.focused, Focusable::Checkbox {
                     checked: node.checked,
                     on_toggle: node.on_toggle.clone(),
                 });
             }
             View::RadioGroup(node) => {
-                self.focusables.push(Focusable::RadioGroup {
+                self.push_focusable(&node.key, node.focused, Focusable::RadioGroup {
                     options_count: node.options.len(),
                     selected: node.selected,
                     on_change: node.on_change.clone(),
@@ -395,37 +529,29 @@ impl FocusManager {
                 // Only collect focusables from visible modals
                 if node.visible {
                     if let Some(child) = &node.child {
-                        if let Some(idx) = self.collect_recursive(child) {
-                            initial_focus = Some(idx);
-                        }
+                        self.collect_recursive(child);
                     }
                 }
             }
             View::Split(node) => {
                 // Split is a layout container - recurse into both panes
-                if let Some(idx) = self.collect_recursive(&node.first) {
-                    initial_focus = Some(idx);
-                }
-                if let Some(idx) = self.collect_recursive(&node.second) {
-                    initial_focus = Some(idx);
-                }
+                self.collect_recursive(&node.first);
+                self.collect_recursive(&node.second);
             }
             View::Tabs(node) => {
                 // Tabs itself is focusable for tab switching
-                self.focusables.push(Focusable::Tabs {
+                self.push_focusable(&node.key, node.focused, Focusable::Tabs {
                     tab_count: node.tabs.len(),
                     active: node.active,
                     on_change: node.on_change.clone(),
                 });
                 // Then recurse into the active tab's content
                 if node.active < node.children.len() {
-                    if let Some(idx) = self.collect_recursive(&node.children[node.active]) {
-                        initial_focus = Some(idx);
-                    }
+                    self.collect_recursive(&node.children[node.active]);
                 }
             }
             View::Tree(node) => {
-                self.focusables.push(Focusable::Tree {
+                self.push_focusable(&node.key, node.focused, Focusable::Tree {
                     items: node.items.clone(),
                     selected: node.selected.clone(),
                     on_select: node.on_select.clone(),
@@ -433,7 +559,7 @@ impl FocusManager {
                 });
             }
             View::Table(node) => {
-                self.focusables.push(Focusable::Table {
+                self.push_focusable(&node.key, node.focused, Focusable::Table {
                     row_count: node.rows.len(),
                     selected: node.selected,
                     sort: node.sort,
@@ -445,7 +571,7 @@ impl FocusManager {
             View::CommandPalette(node) => {
                 // Only add as focusable if visible
                 if node.visible {
-                    self.focusables.push(Focusable::CommandPalette {
+                    self.push_focusable(&node.key, node.focused, Focusable::CommandPalette {
                         visible: node.visible,
                         query: node.query.clone(),
                         commands: node.commands.clone(),
@@ -457,7 +583,7 @@ impl FocusManager {
                 }
             }
             View::MenuBar(node) => {
-                self.focusables.push(Focusable::MenuBar {
+                self.push_focusable(&node.key, node.focused, Focusable::MenuBar {
                     menus: node.menus.clone(),
                     active_menu: node.active_menu,
                     highlighted_menu: node.highlighted_menu,
@@ -471,13 +597,11 @@ impl FocusManager {
             View::Form(node) => {
                 // Form is a container - recurse into children
                 for child in &node.children {
-                    if let Some(idx) = self.collect_recursive(child) {
-                        initial_focus = Some(idx);
-                    }
+                    self.collect_recursive(child);
                 }
             }
             View::FormField(node) => {
-                self.focusables.push(Focusable::FormField {
+                self.push_focusable(&node.key, node.focused, Focusable::FormField {
                     name: node.name.clone(),
                     value: node.value.clone(),
                     cursor_pos: node.cursor_pos,
@@ -486,16 +610,14 @@ impl FocusManager {
                 });
             }
             View::Terminal(node) => {
-                self.focusables.push(Focusable::Terminal {
+                self.push_focusable(&node.key, node.focused, Focusable::Terminal {
                     handle: node.handle.clone(),
                     on_exit: node.on_exit.clone(),
                 });
             }
             View::ErrorBoundary(node) => {
                 // Collect focusables from the child view
-                if let Some(idx) = self.collect_recursive(&node.child) {
-                    initial_focus = Some(idx);
-                }
+                self.collect_recursive(&node.child);
             }
             View::Custom(_) => {
                 // Custom widgets are not currently focusable through the
@@ -503,7 +625,7 @@ impl FocusManager {
                 // For now, skip. Users can wrap in a Box with scroll for focus.
             }
             View::Slider(node) => {
-                self.focusables.push(Focusable::Slider {
+                self.push_focusable(&node.key, node.focused, Focusable::Slider {
                     min: node.min,
                     max: node.max,
                     value: node.value,
@@ -520,8 +642,6 @@ impl FocusManager {
             | View::Image(_)
             | View::Empty => {}
         }
-
-        initial_focus
     }
 
     /// Move focus to the next focusable element.
@@ -557,6 +677,60 @@ impl FocusManager {
     /// Check if focus styling should be visible (user has started keyboard navigation).
     pub fn is_focus_visible(&self) -> bool {
         self.focus_visible
+    }
+
+    /// Whether the focused widget handles this key itself, so it should get the key before
+    /// app-registered commands. Mirrors the run loop's widget dispatch: only keys a widget
+    /// actually acts on count, so anything else still reaches the app's commands.
+    /// Ctrl/Alt chords are decided by the caller (commands always see them first).
+    pub(crate) fn focused_handles_key(&self, code: KeyCode, modifiers: KeyModifiers) -> bool {
+        use KeyCode::*;
+        let plain = modifiers == KeyModifiers::NONE;
+        let shifted_char = modifiers == KeyModifiers::SHIFT && matches!(code, Char(_));
+        let activate = plain && matches!(code, Enter | Char(' '));
+        match self.focusables.get(self.focus_index) {
+            Some(Focusable::Button(on_press)) => activate && on_press.is_some(),
+            Some(Focusable::Checkbox { on_toggle, .. }) => activate && on_toggle.is_some(),
+            Some(Focusable::TextInput { on_submit, on_key_up, on_key_down, .. }) => {
+                shifted_char
+                    || (plain
+                        && match code {
+                            Char(_) | Backspace | Left | Right => true,
+                            Up => on_key_up.is_some(),
+                            Down => on_key_down.is_some(),
+                            Enter => on_submit.is_some(),
+                            _ => false,
+                        })
+            }
+            Some(Focusable::TextArea { .. }) => {
+                shifted_char || (plain && matches!(code, Char(_) | Enter | Backspace | Up | Down | Left | Right))
+            }
+            // Space reaches the Enter/Space arm, which doesn't type into form fields
+            Some(Focusable::FormField { .. }) => {
+                shifted_char || (plain && (matches!(code, Backspace) || matches!(code, Char(c) if c != ' ')))
+            }
+            Some(Focusable::List { .. }) => plain && matches!(code, Up | Down),
+            Some(Focusable::RadioGroup { .. }) => plain && matches!(code, Up | Down | Char('j') | Char('k')),
+            Some(Focusable::Tabs { .. }) => {
+                plain && matches!(code, Left | Right | Char('[') | Char(']') | Char('1'..='9'))
+            }
+            Some(Focusable::Tree { on_activate, .. }) => {
+                (plain && matches!(code, Up | Down | Left | Right | Home | End | Char('j') | Char('k') | Char('g')))
+                    || (modifiers == KeyModifiers::SHIFT && matches!(code, Char('G') | Char('g')))
+                    || (activate && on_activate.is_some())
+            }
+            Some(Focusable::Table { on_activate, .. }) => {
+                (plain && matches!(code, Up | Down | Char('j') | Char('k'))) || (activate && on_activate.is_some())
+            }
+            Some(Focusable::Slider { .. }) => plain && matches!(code, Left | Right),
+            Some(Focusable::Scrollable { .. }) => plain && matches!(code, Up | Down | PageUp | PageDown | Home | End),
+            Some(Focusable::MenuBar { .. }) => {
+                (plain && matches!(code, Left | Right)) || activate || (plain && matches!(code, Up | Down) && self.menu_bar_has_open_menu())
+            }
+            Some(Focusable::Terminal { .. }) => true,
+            // The command palette takes its keys before commands already (run loop)
+            Some(Focusable::CommandPalette { .. }) | None => false,
+        }
     }
 
     /// Activate the currently focused element (for buttons and checkboxes).

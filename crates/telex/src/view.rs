@@ -923,6 +923,10 @@ pub struct BoxNode {
     pub min_height: Option<u16>,
     /// Maximum height constraint.
     pub max_height: Option<u16>,
+    /// Stable focus identity (see `.key()`).
+    pub key: Option<String>,
+    /// Requests focus when newly present (see `.focused()`).
+    pub focused: bool,
 }
 
 /// Flexible space that expands to fill available space.
@@ -939,6 +943,10 @@ pub struct SpacerNode {
 pub struct ButtonNode {
     pub label: String,
     pub on_press: Option<Callback>,
+    /// Stable focus identity (see `.key()`).
+    pub key: Option<String>,
+    /// Requests focus when newly present (see `.focused()`).
+    pub focused: bool,
 }
 
 /// A selectable list node.
@@ -957,6 +965,10 @@ pub struct ListNode {
     pub selected: usize,
     /// Callback when selection changes.
     pub on_select: Option<SelectCallback>,
+    /// Stable focus identity (see `.key()`).
+    pub key: Option<String>,
+    /// Requests focus when newly present (see `.focused()`).
+    pub focused: bool,
 }
 
 /// A text input node.
@@ -980,6 +992,8 @@ pub struct TextInputNode {
     pub cursor_pos: usize,
     /// Whether this input should have initial focus.
     pub focused: bool,
+    /// Stable focus identity (see `.key()`).
+    pub key: Option<String>,
 }
 
 /// A multi-line text area node.
@@ -1001,6 +1015,10 @@ pub struct TextAreaNode {
     pub rows: u16,
     /// Width at which to auto-wrap text (None = no wrap, text truncated at display edge).
     pub wrap_width: Option<u16>,
+    /// Stable focus identity (see `.key()`).
+    pub key: Option<String>,
+    /// Requests focus when newly present (see `.focused()`).
+    pub focused: bool,
 }
 
 /// A checkbox node.
@@ -1012,6 +1030,10 @@ pub struct CheckboxNode {
     pub label: String,
     /// Callback when toggled.
     pub on_toggle: Option<ToggleCallback>,
+    /// Stable focus identity (see `.key()`).
+    pub key: Option<String>,
+    /// Requests focus when newly present (see `.focused()`).
+    pub focused: bool,
 }
 
 /// A radio group node (mutually exclusive options).
@@ -1025,6 +1047,10 @@ pub struct RadioGroupNode {
     pub label: Option<String>,
     /// Callback when selection changes.
     pub on_change: Option<SelectCallback>,
+    /// Stable focus identity (see `.key()`).
+    pub key: Option<String>,
+    /// Requests focus when newly present (see `.focused()`).
+    pub focused: bool,
 }
 
 /// A modal dialog node.
@@ -1076,6 +1102,10 @@ pub struct TabsNode {
     pub on_change: Option<SelectCallback>,
     /// Position of the tab bar (top or bottom).
     pub position: TabPosition,
+    /// Stable focus identity (see `.key()`).
+    pub key: Option<String>,
+    /// Requests focus when newly present (see `.focused()`).
+    pub focused: bool,
 }
 
 /// A single item in a tree view.
@@ -1173,6 +1203,10 @@ pub struct TreeNode {
     pub on_select: Option<TreeSelectCallback>,
     /// Callback when an item is activated (Enter/Space).
     pub on_activate: Option<TreeActivateCallback>,
+    /// Stable focus identity (see `.key()`).
+    pub key: Option<String>,
+    /// Requests focus when newly present (see `.focused()`).
+    pub focused: bool,
 }
 
 /// Text alignment for table columns.
@@ -1256,6 +1290,10 @@ pub struct TableNode {
     pub on_sort: Option<SortCallback>,
     /// Callback when a row is activated (Enter).
     pub on_activate: Option<RowActivateCallback>,
+    /// Stable focus identity (see `.key()`).
+    pub key: Option<String>,
+    /// Requests focus when newly present (see `.focused()`).
+    pub focused: bool,
 }
 
 /// A progress bar node.
@@ -1403,6 +1441,8 @@ impl HStackBuilder {
 pub struct ButtonBuilder {
     label: String,
     on_press: Option<Callback>,
+    key: Option<String>,
+    focused: bool,
 }
 
 impl ButtonBuilder {
@@ -1420,10 +1460,25 @@ impl ButtonBuilder {
         self
     }
 
+    /// Stable identity for focus and per-widget state (scroll, cursor), so they follow
+    /// this widget rather than its position in the focus order.
+    pub fn key(mut self, key: impl Into<String>) -> Self {
+        self.key = Some(key.into());
+        self
+    }
+
+    /// Request focus whenever this widget newly appears (e.g. on entering a screen).
+    pub fn focused(mut self, focused: bool) -> Self {
+        self.focused = focused;
+        self
+    }
+
     pub fn build(self) -> View {
         View::Button(ButtonNode {
             label: self.label,
             on_press: self.on_press,
+            key: self.key,
+            focused: self.focused,
         })
     }
 }
@@ -1442,6 +1497,8 @@ pub struct BoxBuilder {
     max_width: Option<u16>,
     min_height: Option<u16>,
     max_height: Option<u16>,
+    key: Option<String>,
+    focused: bool,
 }
 
 impl BoxBuilder {
@@ -1508,6 +1565,19 @@ impl BoxBuilder {
         self
     }
 
+    /// Stable identity for focus and per-widget state (scroll, cursor), so they follow
+    /// this widget rather than its position in the focus order.
+    pub fn key(mut self, key: impl Into<String>) -> Self {
+        self.key = Some(key.into());
+        self
+    }
+
+    /// Request focus whenever this widget newly appears (e.g. on entering a screen).
+    pub fn focused(mut self, focused: bool) -> Self {
+        self.focused = focused;
+        self
+    }
+
     pub fn build(self) -> View {
         // Scrollable boxes are focusable by default so users can scroll back
         let default_focusable = self.scroll || self.auto_scroll_bottom;
@@ -1523,6 +1593,8 @@ impl BoxBuilder {
             max_width: self.max_width,
             min_height: self.min_height,
             max_height: self.max_height,
+            key: self.key,
+            focused: self.focused,
         })
     }
 }
@@ -1536,6 +1608,8 @@ pub struct ListBuilder {
     annotations: Vec<Vec<(usize, usize)>>,
     selected: usize,
     on_select: Option<SelectCallback>,
+    key: Option<String>,
+    focused: bool,
 }
 
 impl ListBuilder {
@@ -1573,8 +1647,23 @@ impl ListBuilder {
         self
     }
 
+    /// Stable identity for focus and per-widget state (scroll, cursor), so they follow
+    /// this widget rather than its position in the focus order.
+    pub fn key(mut self, key: impl Into<String>) -> Self {
+        self.key = Some(key.into());
+        self
+    }
+
+    /// Request focus whenever this widget newly appears (e.g. on entering a screen).
+    pub fn focused(mut self, focused: bool) -> Self {
+        self.focused = focused;
+        self
+    }
+
     pub fn build(self) -> View {
         View::List(ListNode {
+            key: self.key,
+            focused: self.focused,
             items: self.items,
             highlights: self.highlights,
             colored_highlights: self.colored_highlights,
@@ -1597,6 +1686,7 @@ pub struct TextInputBuilder {
     on_key_down: Option<Callback>,
     cursor_pos: usize,
     focused: bool,
+    key: Option<String>,
 }
 
 impl TextInputBuilder {
@@ -1648,9 +1738,16 @@ impl TextInputBuilder {
         self
     }
 
-    /// Set this input to have initial focus when the app starts.
+    /// Request focus whenever this input newly appears (e.g. on entering a screen).
     pub fn focused(mut self, focused: bool) -> Self {
         self.focused = focused;
+        self
+    }
+
+    /// Stable identity for focus and per-widget state (scroll, cursor), so they follow
+    /// this widget rather than its position in the focus order.
+    pub fn key(mut self, key: impl Into<String>) -> Self {
+        self.key = Some(key.into());
         self
     }
 
@@ -1665,6 +1762,7 @@ impl TextInputBuilder {
             on_key_down: self.on_key_down,
             cursor_pos: self.cursor_pos.min(self.value.len()),
             focused: self.focused,
+            key: self.key,
         })
     }
 }
@@ -1675,6 +1773,8 @@ pub struct CheckboxBuilder {
     checked: bool,
     label: String,
     on_toggle: Option<ToggleCallback>,
+    key: Option<String>,
+    focused: bool,
 }
 
 impl CheckboxBuilder {
@@ -1697,8 +1797,23 @@ impl CheckboxBuilder {
         self
     }
 
+    /// Stable identity for focus and per-widget state (scroll, cursor), so they follow
+    /// this widget rather than its position in the focus order.
+    pub fn key(mut self, key: impl Into<String>) -> Self {
+        self.key = Some(key.into());
+        self
+    }
+
+    /// Request focus whenever this widget newly appears (e.g. on entering a screen).
+    pub fn focused(mut self, focused: bool) -> Self {
+        self.focused = focused;
+        self
+    }
+
     pub fn build(self) -> View {
         View::Checkbox(CheckboxNode {
+            key: self.key,
+            focused: self.focused,
             checked: self.checked,
             label: self.label,
             on_toggle: self.on_toggle,
@@ -1713,6 +1828,8 @@ pub struct RadioGroupBuilder {
     selected: usize,
     label: Option<String>,
     on_change: Option<SelectCallback>,
+    key: Option<String>,
+    focused: bool,
 }
 
 impl RadioGroupBuilder {
@@ -1750,8 +1867,23 @@ impl RadioGroupBuilder {
         self
     }
 
+    /// Stable identity for focus and per-widget state (scroll, cursor), so they follow
+    /// this widget rather than its position in the focus order.
+    pub fn key(mut self, key: impl Into<String>) -> Self {
+        self.key = Some(key.into());
+        self
+    }
+
+    /// Request focus whenever this widget newly appears (e.g. on entering a screen).
+    pub fn focused(mut self, focused: bool) -> Self {
+        self.focused = focused;
+        self
+    }
+
     pub fn build(self) -> View {
         View::RadioGroup(RadioGroupNode {
+            key: self.key,
+            focused: self.focused,
             options: self.options,
             selected: self.selected,
             label: self.label,
@@ -1840,6 +1972,8 @@ pub struct TextAreaBuilder {
     cursor_col: usize,
     rows: u16,
     wrap_width: Option<u16>,
+    key: Option<String>,
+    focused: bool,
 }
 
 impl TextAreaBuilder {
@@ -1899,8 +2033,23 @@ impl TextAreaBuilder {
         self
     }
 
+    /// Stable identity for focus and per-widget state (scroll, cursor), so they follow
+    /// this widget rather than its position in the focus order.
+    pub fn key(mut self, key: impl Into<String>) -> Self {
+        self.key = Some(key.into());
+        self
+    }
+
+    /// Request focus whenever this widget newly appears (e.g. on entering a screen).
+    pub fn focused(mut self, focused: bool) -> Self {
+        self.focused = focused;
+        self
+    }
+
     pub fn build(self) -> View {
         View::TextArea(TextAreaNode {
+            key: self.key,
+            focused: self.focused,
             value: self.value,
             placeholder: self.placeholder,
             on_change: self.on_change,
@@ -2071,6 +2220,8 @@ pub struct TabsBuilder {
     active: usize,
     on_change: Option<SelectCallback>,
     position: TabPosition,
+    key: Option<String>,
+    focused: bool,
 }
 
 impl TabsBuilder {
@@ -2103,8 +2254,23 @@ impl TabsBuilder {
         self
     }
 
+    /// Stable identity for focus and per-widget state (scroll, cursor), so they follow
+    /// this widget rather than its position in the focus order.
+    pub fn key(mut self, key: impl Into<String>) -> Self {
+        self.key = Some(key.into());
+        self
+    }
+
+    /// Request focus whenever this widget newly appears (e.g. on entering a screen).
+    pub fn focused(mut self, focused: bool) -> Self {
+        self.focused = focused;
+        self
+    }
+
     pub fn build(self) -> View {
         View::Tabs(TabsNode {
+            key: self.key,
+            focused: self.focused,
             tabs: self.tabs,
             children: self.children,
             active: self.active,
@@ -2121,6 +2287,8 @@ pub struct TreeBuilder {
     selected: TreePath,
     on_select: Option<TreeSelectCallback>,
     on_activate: Option<TreeActivateCallback>,
+    key: Option<String>,
+    focused: bool,
 }
 
 impl TreeBuilder {
@@ -2158,8 +2326,23 @@ impl TreeBuilder {
         self
     }
 
+    /// Stable identity for focus and per-widget state (scroll, cursor), so they follow
+    /// this widget rather than its position in the focus order.
+    pub fn key(mut self, key: impl Into<String>) -> Self {
+        self.key = Some(key.into());
+        self
+    }
+
+    /// Request focus whenever this widget newly appears (e.g. on entering a screen).
+    pub fn focused(mut self, focused: bool) -> Self {
+        self.focused = focused;
+        self
+    }
+
     pub fn build(self) -> View {
         View::Tree(TreeNode {
+            key: self.key,
+            focused: self.focused,
             items: self.items,
             selected: self.selected,
             on_select: self.on_select,
@@ -2178,6 +2361,8 @@ pub struct TableBuilder {
     on_select: Option<SelectCallback>,
     on_sort: Option<SortCallback>,
     on_activate: Option<RowActivateCallback>,
+    key: Option<String>,
+    focused: bool,
 }
 
 impl TableBuilder {
@@ -2245,8 +2430,23 @@ impl TableBuilder {
         self
     }
 
+    /// Stable identity for focus and per-widget state (scroll, cursor), so they follow
+    /// this widget rather than its position in the focus order.
+    pub fn key(mut self, key: impl Into<String>) -> Self {
+        self.key = Some(key.into());
+        self
+    }
+
+    /// Request focus whenever this widget newly appears (e.g. on entering a screen).
+    pub fn focused(mut self, focused: bool) -> Self {
+        self.focused = focused;
+        self
+    }
+
     pub fn build(self) -> View {
         View::Table(TableNode {
+            key: self.key,
+            focused: self.focused,
             columns: self.columns,
             rows: self.rows,
             selected: self.selected,
@@ -2454,6 +2654,10 @@ pub struct CommandPaletteNode {
     pub width_percent: u16,
     /// Height percentage (0-100).
     pub height_percent: u16,
+    /// Stable focus identity (see `.key()`).
+    pub key: Option<String>,
+    /// Requests focus when newly present (see `.focused()`).
+    pub focused: bool,
 }
 
 /// Builder for CommandPalette views.
@@ -2468,6 +2672,8 @@ pub struct CommandPaletteBuilder {
     on_dismiss: Option<Callback>,
     width_percent: u16,
     height_percent: u16,
+    key: Option<String>,
+    focused: bool,
 }
 
 impl CommandPaletteBuilder {
@@ -2539,8 +2745,23 @@ impl CommandPaletteBuilder {
         self
     }
 
+    /// Stable identity for focus and per-widget state (scroll, cursor), so they follow
+    /// this widget rather than its position in the focus order.
+    pub fn key(mut self, key: impl Into<String>) -> Self {
+        self.key = Some(key.into());
+        self
+    }
+
+    /// Request focus whenever this widget newly appears (e.g. on entering a screen).
+    pub fn focused(mut self, focused: bool) -> Self {
+        self.focused = focused;
+        self
+    }
+
     pub fn build(self) -> View {
         View::CommandPalette(CommandPaletteNode {
+            key: self.key,
+            focused: self.focused,
             visible: self.visible,
             query: self.query,
             commands: self.commands,
@@ -2643,6 +2864,10 @@ pub struct MenuBarNode {
     pub on_highlight_change: Option<SelectCallback>,
     /// Callback when the selected item within a menu changes.
     pub on_item_change: Option<SelectCallback>,
+    /// Stable focus identity (see `.key()`).
+    pub key: Option<String>,
+    /// Requests focus when newly present (see `.focused()`).
+    pub focused: bool,
 }
 
 /// Builder for MenuBar views.
@@ -2656,6 +2881,8 @@ pub struct MenuBarBuilder {
     on_menu_change: Option<SelectCallback>,
     on_highlight_change: Option<SelectCallback>,
     on_item_change: Option<SelectCallback>,
+    key: Option<String>,
+    focused: bool,
 }
 
 impl MenuBarBuilder {
@@ -2711,8 +2938,23 @@ impl MenuBarBuilder {
         self
     }
 
+    /// Stable identity for focus and per-widget state (scroll, cursor), so they follow
+    /// this widget rather than its position in the focus order.
+    pub fn key(mut self, key: impl Into<String>) -> Self {
+        self.key = Some(key.into());
+        self
+    }
+
+    /// Request focus whenever this widget newly appears (e.g. on entering a screen).
+    pub fn focused(mut self, focused: bool) -> Self {
+        self.focused = focused;
+        self
+    }
+
     pub fn build(self) -> View {
         View::MenuBar(MenuBarNode {
+            key: self.key,
+            focused: self.focused,
             menus: self.menus,
             active_menu: self.active_menu,
             highlighted_menu: self.highlighted_menu,
@@ -2946,6 +3188,10 @@ pub struct FormFieldNode {
     pub on_blur: Option<Callback>,
     /// Cursor position.
     pub cursor_pos: usize,
+    /// Stable focus identity (see `.key()`).
+    pub key: Option<String>,
+    /// Requests focus when newly present (see `.focused()`).
+    pub focused: bool,
 }
 
 /// Builder for FormField views.
@@ -2960,6 +3206,8 @@ pub struct FormFieldBuilder {
     on_change: Option<ChangeCallback>,
     on_blur: Option<Callback>,
     cursor_pos: usize,
+    key: Option<String>,
+    focused: bool,
 }
 
 impl FormFieldBuilder {
@@ -3021,8 +3269,23 @@ impl FormFieldBuilder {
         self
     }
 
+    /// Stable identity for focus and per-widget state (scroll, cursor), so they follow
+    /// this widget rather than its position in the focus order.
+    pub fn key(mut self, key: impl Into<String>) -> Self {
+        self.key = Some(key.into());
+        self
+    }
+
+    /// Request focus whenever this widget newly appears (e.g. on entering a screen).
+    pub fn focused(mut self, focused: bool) -> Self {
+        self.focused = focused;
+        self
+    }
+
     pub fn build(self) -> View {
         View::FormField(FormFieldNode {
+            key: self.key,
+            focused: self.focused,
             name: self.name,
             label: self.label,
             value: self.value.clone(),
@@ -3260,6 +3523,10 @@ pub struct TerminalNode {
     pub title: Option<String>,
     /// Callback invoked when the PTY process exits.
     pub on_exit: Option<Callback>,
+    /// Stable focus identity (see `.key()`).
+    pub key: Option<String>,
+    /// Requests focus when newly present (see `.focused()`).
+    pub focused: bool,
 }
 
 /// Builder for Terminal views.
@@ -3270,6 +3537,8 @@ pub struct TerminalBuilder {
     border: bool,
     title: Option<String>,
     on_exit: Option<Callback>,
+    key: Option<String>,
+    focused: bool,
 }
 
 impl Default for TerminalBuilder {
@@ -3281,6 +3550,8 @@ impl Default for TerminalBuilder {
             border: true,
             title: Some("Terminal".to_string()),
             on_exit: None,
+            key: None,
+            focused: false,
         }
     }
 }
@@ -3328,8 +3599,23 @@ impl TerminalBuilder {
         self
     }
 
+    /// Stable identity for focus and per-widget state (scroll, cursor), so they follow
+    /// this widget rather than its position in the focus order.
+    pub fn key(mut self, key: impl Into<String>) -> Self {
+        self.key = Some(key.into());
+        self
+    }
+
+    /// Request focus whenever this widget newly appears (e.g. on entering a screen).
+    pub fn focused(mut self, focused: bool) -> Self {
+        self.focused = focused;
+        self
+    }
+
     pub fn build(self) -> View {
         View::Terminal(TerminalNode {
+            key: self.key,
+            focused: self.focused,
             handle: self.handle.expect("Terminal requires a handle (from cx.use_terminal())"),
             rows: self.rows,
             cols: self.cols,
@@ -3417,6 +3703,10 @@ pub struct SliderNode {
     pub label: Option<String>,
     pub on_change: Option<SliderCallback>,
     pub color: Option<crossterm::style::Color>,
+    /// Stable focus identity (see `.key()`).
+    pub key: Option<String>,
+    /// Requests focus when newly present (see `.focused()`).
+    pub focused: bool,
 }
 
 /// Builder for slider views.
@@ -3429,6 +3719,8 @@ pub struct SliderBuilder {
     label: Option<String>,
     on_change: Option<SliderCallback>,
     color: Option<crossterm::style::Color>,
+    key: Option<String>,
+    focused: bool,
 }
 
 impl SliderBuilder {
@@ -3441,6 +3733,8 @@ impl SliderBuilder {
             label: None,
             on_change: None,
             color: None,
+            key: None,
+            focused: false,
         }
     }
 
@@ -3479,8 +3773,23 @@ impl SliderBuilder {
         self
     }
 
+    /// Stable identity for focus and per-widget state (scroll, cursor), so they follow
+    /// this widget rather than its position in the focus order.
+    pub fn key(mut self, key: impl Into<String>) -> Self {
+        self.key = Some(key.into());
+        self
+    }
+
+    /// Request focus whenever this widget newly appears (e.g. on entering a screen).
+    pub fn focused(mut self, focused: bool) -> Self {
+        self.focused = focused;
+        self
+    }
+
     pub fn build(self) -> View {
         View::Slider(SliderNode {
+            key: self.key,
+            focused: self.focused,
             min: self.min,
             max: self.max,
             value: self.value.clamp(self.min, self.max),

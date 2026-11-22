@@ -576,6 +576,9 @@ fn run_inner<C: Component, E: EventSource>(
                 focus.focus_index(),
                 focus.focusable_count(),
             )?;
+            if !focus.duplicate_keys().is_empty() {
+                terminal.draw_debug_line(1, &format!(" Duplicate focus keys: {} ", focus.duplicate_keys().join(", ")))?;
+            }
         }
 
         // Run pending effects (after render, before input handling)
@@ -692,8 +695,12 @@ fn run_inner<C: Component, E: EventSource>(
                     continue;
                 }
 
-                // First, try user-registered commands
-                if commands.execute(key.code, key.modifiers) {
+                // Ctrl/Alt chords go to user-registered commands first. Other keys go to the
+                // focused widget first when it handles them (widget dispatch below), and
+                // only otherwise to commands
+                let is_chord = key.modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT);
+                let widget_first = !is_chord && focus.focused_handles_key(key.code, key.modifiers);
+                if !widget_first && commands.execute(key.code, key.modifiers) {
                     continue;
                 }
 

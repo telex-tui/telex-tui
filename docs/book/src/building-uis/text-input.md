@@ -214,7 +214,9 @@ View::text_input()
     .build()
 ```
 
-Useful for dialogs, forms, or any UI where the user's next action is typing.
+Useful for dialogs, forms, or any UI where the user's next action is typing. The request
+applies whenever the input newly appears, so it works on every screen, not just the first.
+Any focusable widget accepts `.focused(true)`. See [Focus and Keys](../advanced/focus.md).
 
 ## TextInput vs TextArea
 

@@ -253,6 +253,13 @@ impl<C: Component> TestApp<C> {
         }
     }
 
+    /// Keys used by more than one focusable in the latest render (all but the first in
+    /// tree order fall back to positional identity).
+    pub fn duplicate_focus_keys(&mut self) -> Vec<String> {
+        self.draw_frame();
+        self.focus.duplicate_keys().to_vec()
+    }
+
     /// Scroll up in the focused scrollable.
     pub fn scroll_up(&mut self, amount: u16) {
         let view = self.render();

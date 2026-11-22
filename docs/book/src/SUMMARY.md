@@ -49,6 +49,7 @@
 # Advanced Patterns
 
 - [Keyed State](./advanced/keyed-state.md)
+- [Focus and Keys](./advanced/focus.md)
 - [Shared State](./advanced/shared-state.md)
 - [Context](./advanced/context.md)
 - [Reducer](./advanced/reducer.md)

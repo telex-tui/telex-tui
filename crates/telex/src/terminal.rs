@@ -262,6 +262,22 @@ impl Terminal {
         Ok(())
     }
 
+    /// Draw an extra debug line at the top-right corner, below `draw_debug`'s.
+    pub(crate) fn draw_debug_line(&mut self, y: u16, text: &str) -> io::Result<()> {
+        let x = self.buffer.width.saturating_sub(text.chars().count() as u16 + 1);
+        queue!(
+            self.stdout,
+            MoveTo(x, y),
+            SetForegroundColor(Color::Black),
+            SetBackgroundColor(Color::Yellow),
+            Print(text),
+            SetForegroundColor(Color::Reset),
+            SetBackgroundColor(Color::Reset)
+        )?;
+        self.stdout.flush()?;
+        Ok(())
+    }
+
     /// Clean up the terminal state.
     pub fn cleanup(&mut self) -> io::Result<()> {
         if self.headless {
