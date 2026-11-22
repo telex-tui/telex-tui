@@ -16,6 +16,18 @@ use crate::view::{
     ToastPosition, TreeItem, TreeNode, TreePath, VStackNode, View,
 };
 
+/// How far a focusable scrollable box can actually scroll, measured during render.
+/// Fed back to `FocusManager` so key handling stops at the real end of the content
+/// instead of a fixed guess.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct ScrollLimit {
+    /// Largest useful scroll offset (rows). For `auto_scroll_bottom` boxes this is the
+    /// offset *from the bottom*, matching how their scroll state is stored.
+    pub max_y: u16,
+    /// Visible content rows, used as the page size for Page Up/Down.
+    pub viewport_height: u16,
+}
+
 /// A pending menu dropdown to render after main content.
 struct PendingDropdown {
     menu: crate::view::Menu,
@@ -32,6 +44,8 @@ pub struct RenderContext {
     focusable_counter: usize,
     /// Scroll offsets for each focusable (scroll_y, scroll_x)
     scroll_offsets: Vec<(u16, u16)>,
+    /// Measured scroll limits for each focusable (default for non-scrollables)
+    scroll_limits: Vec<ScrollLimit>,
     /// Cursor positions for text inputs (usize::MAX means use node's value)
     cursor_offsets: Vec<usize>,
     /// Root area (full screen) for modals to use
@@ -62,6 +76,7 @@ impl RenderContext {
             focus_index,
             focusable_counter: 0,
             scroll_offsets,
+            scroll_limits: Vec::new(),
             cursor_offsets,
             root_area,
             modal_visible: false,
@@ -152,6 +167,19 @@ impl RenderContext {
     /// Get the (potentially modified) scroll offsets to apply back to FocusManager.
     pub fn scroll_offsets(&self) -> &[(u16, u16)] {
         &self.scroll_offsets
+    }
+
+    /// Record the measured scroll limit for a focusable.
+    fn set_scroll_limit(&mut self, idx: usize, limit: ScrollLimit) {
+        if self.scroll_limits.len() <= idx {
+            self.scroll_limits.resize(idx + 1, ScrollLimit::default());
+        }
+        self.scroll_limits[idx] = limit;
+    }
+
+    /// Get the measured scroll limits to apply back to FocusManager.
+    pub(crate) fn scroll_limits(&self) -> &[ScrollLimit] {
+        &self.scroll_limits
     }
 
     /// Queue a canvas graphic to be rendered via Kitty protocol after character buffer.
@@ -786,13 +814,13 @@ fn render_box(buffer: &mut Buffer, node: &BoxNode, area: Rect, ctx: &mut RenderC
     }
 
     // Get scroll offset and focus state if focusable
-    let (user_scroll_y, is_focused) = if is_focusable {
+    let (focus_idx, user_scroll_y, is_focused) = if is_focusable {
         let idx = ctx.current_focusable_index();
         let is_focused = ctx.is_next_focused();
         let (sy, _sx) = ctx.scroll_offsets.get(idx).copied().unwrap_or((0, 0));
-        (sy, is_focused)
+        (Some(idx), sy, is_focused)
     } else {
-        (0, false)
+        (None, 0, false)
     };
 
     // Draw border if enabled (with focus highlight when focused)
@@ -841,24 +869,38 @@ fn render_box(buffer: &mut Buffer, node: &BoxNode, area: Rect, ctx: &mut RenderC
             inner_area
         };
 
+        // Real scroll range, reported back so key handling stops at the end of the
+        // content (0 when it fits)
+        let max_scroll = content_height.saturating_sub(content_area.height);
+        if let Some(idx) = focus_idx {
+            ctx.set_scroll_limit(
+                idx,
+                ScrollLimit {
+                    max_y: if is_scrollable { max_scroll } else { 0 },
+                    viewport_height: content_area.height,
+                },
+            );
+        }
+
         if node.auto_scroll_bottom && content_height > content_area.height {
             // Auto-scroll mode: default to bottom, but allow user to scroll up
             // user_scroll_y represents offset FROM bottom (0 = at bottom, max = at top)
-            let max_scroll = content_height - content_area.height;
             // Clamp scroll offset to actual max (prevents overscroll accumulation)
-            let scroll_idx = ctx.current_focusable_index().saturating_sub(1);
-            ctx.clamp_scroll_y(scroll_idx, max_scroll);
-            let clamped_scroll_y = ctx
-                .scroll_offsets
-                .get(scroll_idx)
-                .map(|(y, _)| *y)
-                .unwrap_or(0);
+            let clamped_scroll_y = match focus_idx {
+                Some(idx) => {
+                    ctx.clamp_scroll_y(idx, max_scroll);
+                    ctx.scroll_offsets.get(idx).map(|(y, _)| *y).unwrap_or(0)
+                }
+                None => 0,
+            };
             let effective_scroll = max_scroll.saturating_sub(clamped_scroll_y);
             render_scrolled(buffer, child, content_area, effective_scroll, ctx);
             draw_scrollbar(buffer, inner_area, content_height, effective_scroll);
         } else if node.scroll && needs_scrollbar {
-            // Manual scroll mode
-            let max_scroll = content_height.saturating_sub(content_area.height);
+            // Manual scroll mode — clamp too, so overscroll can't accumulate past the end
+            if let Some(idx) = focus_idx {
+                ctx.clamp_scroll_y(idx, max_scroll);
+            }
             let effective_scroll = user_scroll_y.min(max_scroll);
             render_scrolled(buffer, child, content_area, effective_scroll, ctx);
             draw_scrollbar(buffer, inner_area, content_height, effective_scroll);

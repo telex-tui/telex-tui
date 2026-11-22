@@ -566,6 +566,7 @@ fn run_inner<C: Component, E: EventSource>(
             modal_visible,
         )?;
         focus.update_scroll_states(&clamped_offsets);
+        focus.update_scroll_limits(terminal.scroll_limits());
 
         // Draw debug info if enabled
         if debug_mode {
@@ -606,16 +607,18 @@ fn run_inner<C: Component, E: EventSource>(
                 modal_visible,
             )?;
             focus.update_scroll_states(&clamped_offsets);
+            focus.update_scroll_limits(terminal.scroll_limits());
             // Don't flush effects again - just one re-render per frame
         }
 
         // Store current buffer for test retrieval (headless mode)
         event_source.on_frame_rendered(&terminal);
 
-        // For now, use a generous max_scroll to allow scrolling
-        // TODO: Calculate actual content height for focused scrollable
-        let max_scroll = 100u16;
-        let viewport_height = terminal.height().saturating_sub(6); // Approximate visible rows
+        // Real scroll range and page size of the focused scrollable, as measured by the
+        // render above
+        let scroll_limit = focus.focused_scroll_limit();
+        let max_scroll = scroll_limit.max_y;
+        let viewport_height = scroll_limit.viewport_height.max(1);
 
         // Handle input — use saved event from skip-render poll, or poll fresh
         let input_event = if pending_event.is_some() {

@@ -14,7 +14,7 @@ use crossterm::{
 use crate::buffer::Buffer;
 use crate::canvas::{encode_kitty_graphics, supports_kitty_graphics, PendingCanvas};
 use crate::image::{encode_kitty_image, PendingImage};
-use crate::render::{render_view, RenderContext};
+use crate::render::{render_view, RenderContext, ScrollLimit};
 use crate::theme::current_theme;
 use crate::View;
 
@@ -24,6 +24,8 @@ pub struct Terminal {
     buffer: Buffer,
     prev_buffer: Buffer,
     headless: bool,
+    /// Scroll limits measured by the last `draw`
+    scroll_limits: Vec<ScrollLimit>,
 }
 
 impl Terminal {
@@ -43,6 +45,7 @@ impl Terminal {
             buffer,
             prev_buffer,
             headless: false,
+            scroll_limits: Vec::new(),
         })
     }
 
@@ -58,6 +61,7 @@ impl Terminal {
             buffer,
             prev_buffer,
             headless: true,
+            scroll_limits: Vec::new(),
         }
     }
 
@@ -117,8 +121,15 @@ impl Terminal {
         // Swap buffers
         std::mem::swap(&mut self.buffer, &mut self.prev_buffer);
 
+        self.scroll_limits = ctx.scroll_limits().to_vec();
+
         // Return potentially clamped scroll offsets
         Ok(ctx.scroll_offsets().to_vec())
+    }
+
+    /// Scroll limits measured by the last `draw`, to apply back to FocusManager.
+    pub(crate) fn scroll_limits(&self) -> &[ScrollLimit] {
+        &self.scroll_limits
     }
 
     /// Get the terminal height (useful for page up/down calculations).

@@ -77,6 +77,17 @@ impl<C: Component> TestApp<C> {
 
     /// Render to a buffer and return the buffer contents as a string.
     pub fn render_to_string(&mut self) -> String {
+        let buffer = self.draw_frame();
+
+        // Run pending effects after render (mirrors lib.rs behavior)
+        self.storage.flush_effects();
+
+        buffer.to_string()
+    }
+
+    /// Render one frame and apply clamped scroll offsets and measured scroll limits
+    /// back to focus (mirrors lib.rs), without running effects.
+    fn draw_frame(&mut self) -> Buffer {
         let view = self.render();
         self.focus.collect_focusables(&view);
 
@@ -95,10 +106,9 @@ impl<C: Component> TestApp<C> {
         render_view(&mut buffer, &view, area, &mut ctx);
         ctx.render_pending_dropdowns(&mut buffer);
 
-        // Run pending effects after render (mirrors lib.rs behavior)
-        self.storage.flush_effects();
-
-        buffer.to_string()
+        self.focus.update_scroll_states(ctx.scroll_offsets());
+        self.focus.update_scroll_limits(ctx.scroll_limits());
+        buffer
     }
 
     /// Find all text content in the view tree.
@@ -252,9 +262,10 @@ impl<C: Component> TestApp<C> {
 
     /// Scroll down in the focused scrollable.
     pub fn scroll_down(&mut self, amount: u16) {
-        let view = self.render();
-        self.focus.collect_focusables(&view);
-        self.focus.scroll_down(amount, 100);
+        // A frame first, so the focused box's real scroll limit is known
+        self.draw_frame();
+        let max_scroll = self.focus.focused_scroll_limit().max_y;
+        self.focus.scroll_down(amount, max_scroll);
     }
 
     // Helper: collect all text from view tree

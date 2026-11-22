@@ -7,6 +7,7 @@
 #![allow(clippy::collapsible_if)]
 #![allow(clippy::collapsible_match)]
 
+use crate::render::ScrollLimit;
 use crate::text;
 use crate::view::{
     Callback, ChangeCallback, CommandCallback, CursorChangeCallback, CursorPosCallback, Menu,
@@ -139,6 +140,8 @@ pub struct FocusManager {
     /// Preserved scroll states keyed by focusable index
     /// (persists across re-collects to maintain scroll position)
     scroll_states: Vec<(u16, u16)>,
+    /// Scroll limits measured by the last render, keyed by focusable index
+    scroll_limits: Vec<ScrollLimit>,
     /// Preserved cursor positions for text inputs keyed by focusable index
     cursor_states: Vec<usize>,
     /// Whether initial focus has been applied (only happens once)
@@ -185,6 +188,17 @@ impl FocusManager {
                 *state = *offset;
             }
         }
+    }
+
+    /// Replace the scroll limits with those measured by the latest render.
+    pub(crate) fn update_scroll_limits(&mut self, limits: &[ScrollLimit]) {
+        self.scroll_limits = limits.to_vec();
+    }
+
+    /// Measured scroll limit of the currently focused element (zero if not scrollable,
+    /// or not rendered yet).
+    pub(crate) fn focused_scroll_limit(&self) -> ScrollLimit {
+        self.scroll_limits.get(self.focus_index).copied().unwrap_or_default()
     }
 
     /// Collect all focusable elements from the view tree.

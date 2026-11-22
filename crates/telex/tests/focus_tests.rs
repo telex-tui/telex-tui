@@ -502,6 +502,60 @@ fn test_scroll_navigation() {
     app.scroll_up(2);
 }
 
+fn numbered_lines(n: usize) -> String {
+    (1..=n).map(|i| format!("Line {:03}", i)).collect::<Vec<_>>().join("\n")
+}
+
+#[test]
+fn test_scroll_reaches_end_past_100_rows() {
+    // 300 rows in a 10-row box: the real limit is 290, well past the old fixed cap of 100
+    let mut app = TestApp::new(|_cx: Scope| {
+        View::boxed()
+            .scroll(true)
+            .child(View::text(numbered_lines(300)))
+            .build()
+    })
+    .with_size(20, 10);
+
+    app.scroll_down(1000);
+    app.assert_visible("Line 300");
+    app.assert_not_visible("Line 001");
+}
+
+#[test]
+fn test_scroll_overscroll_does_not_accumulate() {
+    let mut app = TestApp::new(|_cx: Scope| {
+        View::boxed()
+            .scroll(true)
+            .child(View::text(numbered_lines(30)))
+            .build()
+    })
+    .with_size(20, 10);
+
+    // Far past the end, then one step back: should move immediately, not first
+    // unwind the excess
+    app.scroll_down(500);
+    app.assert_visible("Line 030");
+    app.scroll_up(1);
+    app.assert_not_visible("Line 030");
+}
+
+#[test]
+fn test_auto_scroll_bottom_reaches_top_past_100_rows() {
+    // Offset is measured from the bottom, so "scroll down" here moves toward the top
+    let mut app = TestApp::new(|_cx: Scope| {
+        View::boxed()
+            .auto_scroll_bottom(true)
+            .child(View::text(numbered_lines(300)))
+            .build()
+    })
+    .with_size(20, 10);
+
+    app.assert_visible("Line 300");
+    app.scroll_down(1000);
+    app.assert_visible("Line 001");
+}
+
 // ============================================================
 // Mixed Focusables Tests
 // ============================================================
